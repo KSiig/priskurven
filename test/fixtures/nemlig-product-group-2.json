@@ -1,0 +1,18 @@
+{
+  "Products": [
+    {
+      "Id": "5001751",
+      "Name": "Bananer økologiske",
+      "Price": 20.0,
+      "Brand": null,
+      "TemplateName": "productlistitem"
+    },
+    {
+      "Id": "5606040",
+      "Name": "Tomater cherry",
+      "Price": 18.5,
+      "Brand": "Driscoll\u02C3s",
+      "TemplateName": "productlistitem"
+    }
+  ]
+}
