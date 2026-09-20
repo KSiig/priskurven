@@ -1,0 +1,108 @@
+name: CI
+
+# SII-101: tests on every PR, WIF-authenticated deploy to GCS on main,
+# Cloudflare Worker deploy via the reusable homelab workflow when
+# wrangler.toml is present.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Workflow-wide default. The deploy job overrides to add id-token: write.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # npm ci requires package-lock.json; npm install as a fallback.
+      # Both steps are intentionally unconditional: a fixture-test
+      # regression must go red on every PR. See SII-101 spec.
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run tests against fixtures
+        run: npm test
+
+  deploy:
+    # main-only. Re-runs tests do not redeploy.
+    name: Deploy to GCS (and Worker, if wrangler.toml exists)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # WIF: needed by google-github-actions/auth@v2 to mint an OIDC token
+      # and exchange it for a Google service account access token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # SII-91 owns the GCS bucket lateral-booking-506410-k4-priskurven
+      # and the Gen 2 function priskurven-collect that reads
+      # function.zip from it. SII-101 ships the upload. No
+      # `gcloud functions deploy` here on purpose.
+      # Install gcloud SDK before auth so `gcloud storage cp` runs.
+      - name: Install Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: lateral-booking-506410-k4
+
+      - name: Authenticate to Google Cloud via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      # Zip the repo root minus noise. node_modules / dist / the zip
+      # itself are excluded so the artifact stays small. The exact
+      # contents of function.zip on first green main are intentionally
+      # not the deliverable of this issue — SII-100 verifies that the
+      # uploaded handler is the real one.
+      - name: Build function.zip
+        run: |
+          zip -r function.zip . \
+            -x '.git/*' \
+               '.github/*' \
+               '*.zip' \
+               '**/node_modules/*' \
+               '**/dist/*' \
+               '**/.DS_Store'
+
+      # SII-91 Terraform pins this object path. Do not invent a
+      # second location.
+      - name: Upload function.zip to GCS
+        run: |
+          gcloud storage cp function.zip \
+            gs://lateral-booking-506410-k4-priskurven/function.zip
+
+      # SII-99 owns wrangler.toml. Until that lands, the deploy step
+      # is skipped via hashFiles so the first green main still
+      # uploads the zip and turns green. Algolia keys are not
+      # referenced in this YAML (SII-110 stores them as secrets).
+      # Inputs and secrets below match the contract declared in
+      # KSiig/homelab/.github/workflows/cloudflare-deploy.yml@main
+      # (verified by reading the workflow at @main before writing).
+      - name: Deploy Cloudflare Worker (when wrangler.toml exists)
+        if: hashFiles('wrangler.toml') != ''
+        uses: KSiig/homelab/.github/workflows/cloudflare-deploy.yml@main
+        with:
+          working_directory: "."
+          command: deploy
+          cloudflare_account_id: "5b3269050c8afff008527d038d4f2538"
+        secrets:
+          cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
