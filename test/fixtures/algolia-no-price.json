@@ -1,0 +1,20 @@
+{
+  "hits": [
+    {
+      "objectID": "netto-prod-200",
+      "productName": "Tilbudsavis Feature",
+      "storeData": {
+        "store-1234": { "price": null }
+      }
+    },
+    {
+      "objectID": "netto-prod-201",
+      "productName": "Out-of-stock Item",
+      "storeData": {}
+    }
+  ],
+  "nbHits": 2,
+  "page": 0,
+  "nbPages": 1,
+  "hitsPerPage": 1000
+}

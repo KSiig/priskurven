@@ -1,0 +1,39 @@
+{
+  "hits": [
+    {
+      "objectID": "netto-prod-001",
+      "productName": "Letmælk 0,5% 1L",
+      "brand": "Netto",
+      "subBrand": "Egne Mærker",
+      "units": 1,
+      "unitsOfMeasure": "ltr",
+      "storeData": {
+        "store-1234": { "price": 895 }
+      }
+    },
+    {
+      "objectID": "netto-prod-002",
+      "productName": "Rugbrød 500g",
+      "brand": "Schulstad",
+      "units": 500,
+      "unitsOfMeasure": "g",
+      "storeData": {
+        "store-1234": { "price": 2495 }
+      }
+    },
+    {
+      "objectID": "netto-prod-003",
+      "productName": "Pasta Penne 500g",
+      "brand": "Barilla",
+      "units": 500,
+      "unitsOfMeasure": "g",
+      "storeData": {
+        "store-1234": { "price": 1495 }
+      }
+    }
+  ],
+  "nbHits": 3,
+  "page": 0,
+  "nbPages": 1,
+  "hitsPerPage": 1000
+}
