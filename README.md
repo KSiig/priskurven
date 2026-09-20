@@ -16,7 +16,7 @@ Identity in M1 is `(source, source_sku)`. GTIN is optional payload, never the ro
 |---|---|---|
 | Rema 1000 | `cphapp.rema1000.dk` catalog dump | Rema `id` (+ `bar_codes` when present) |
 | Nemlig | Sitecore webapi group walk | Nemlig `Id` |
-| Lidl | `lidl.dk/p/api/gridboxes` | `productId` |
+| Lidl | `lidl.dk/q/api/search` | `productId` |
 | Netto / Føtex / BilkaToGo | Salling Algolia indexes | Algolia `objectID` |
 | Min Købmand Holluf Pile | Longjohn `merchantId=769` (Hollufgårdsvej 219, **5220**) | `sku` |
 

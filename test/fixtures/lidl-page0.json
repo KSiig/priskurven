@@ -1,0 +1,125 @@
+{
+  "numFound": 9,
+  "fetchsize": 4,
+  "maxfetchsize": 1000,
+  "offset": 0,
+  "items": [
+    {
+      "gridbox": {
+        "data": {
+          "productId": 10037226,
+          "fullTitle": "Sondey Kammerjunkere",
+          "price": {
+            "basePrice": {
+              "prefix": false,
+              "text": "Pr. kg. 23,17"
+            },
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "oldPrice": 0.0,
+            "price": 6.95,
+            "priceTheme": "white_red",
+            "specialTaxes": [],
+            "variantsHaveDifferentPrices": false
+          },
+          "brand": {
+            "name": "Sondey"
+          }
+        }
+      }
+    },
+    {
+      "gridbox": {
+        "data": {
+          "productId": 11000003,
+          "fullTitle": "Reese's Peanutbutter i hvid chokolade",
+          "price": {
+            "basePrice": {
+              "prefix": false,
+              "text": "Pr. kg 253,16"
+            },
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "packaging": {
+              "text": "79 g"
+            },
+            "price": 20.0,
+            "priceTheme": "white_red",
+            "specialTaxes": [],
+            "superscript": "*2",
+            "variantsHaveDifferentPrices": false
+          },
+          "brand": {
+            "name": "Reese's"
+          }
+        },
+        "meta": {
+          "ean": "0034000462728"
+        }
+      }
+    },
+    {
+      "gridbox": {
+        "data": {
+          "productId": 11000152,
+          "fullTitle": "Ritter SPORT ritter",
+          "price": {
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "specialTaxes": [],
+            "variantsHaveDifferentPrices": false
+          },
+          "brand": {
+            "name": "Ritter SPORT"
+          }
+        }
+      }
+    },
+    {
+      "gridbox": {
+        "data": {
+          "productId": 11000615,
+          "fullTitle": "Halloweennuggets",
+          "price": {
+            "basePrice": {
+              "prefix": false,
+              "text": "Pr. kg 72,50"
+            },
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "packaging": {
+              "text": "400 g"
+            },
+            "price": 29.0,
+            "priceTheme": "white_red",
+            "specialTaxes": [],
+            "superscript": "*2",
+            "variantsHaveDifferentPrices": false
+          },
+          "brand": {
+            "name": "Halloween"
+          }
+        },
+        "meta": {
+          "ean": "20439668"
+        }
+      }
+    }
+  ]
+}

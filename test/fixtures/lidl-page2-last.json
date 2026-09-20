@@ -1,0 +1,70 @@
+{
+  "numFound": 9,
+  "fetchsize": 2,
+  "maxfetchsize": 1000,
+  "offset": 7,
+  "items": [
+    {
+      "gridbox": {
+        "data": {
+          "productId": 11772304,
+          "fullTitle": "Mentos",
+          "price": {
+            "basePrice": {
+              "prefix": false,
+              "text": "Pr. kg maks. 133,33"
+            },
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "packaging": {
+              "text": "37,5-38 g"
+            },
+            "price": 5.0,
+            "priceTheme": "white_red",
+            "specialTaxes": [],
+            "superscript": "*2",
+            "variantsHaveDifferentPrices": false
+          }
+        },
+        "meta": {
+          "ean": "87108019"
+        }
+      }
+    },
+    {
+      "gridbox": {
+        "data": {
+          "productId": 11775363,
+          "fullTitle": "Opvaskemiddel",
+          "price": {
+            "basePrice": {
+              "prefix": false,
+              "text": "Pr. l 24,00"
+            },
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "packaging": {
+              "text": "500 ml"
+            },
+            "price": 12.0,
+            "priceTheme": "white_red",
+            "specialTaxes": [],
+            "superscript": "*2",
+            "variantsHaveDifferentPrices": false
+          }
+        },
+        "meta": {
+          "ean": "8714789740454"
+        }
+      }
+    }
+  ]
+}
