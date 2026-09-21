@@ -7,12 +7,7 @@
  * observation for `(source, source_sku)`. There is no skip-unchanged
  * logic in M1; duplication is acceptable for now.
  *
- * Source/observation shapes:
- *   The canonical types live in SII-92's `src/types.ts`. Per the stack
- *   plan, this file inlines its own copies so the SII-103 branch
- *   compiles in isolation. The parent reconciles during stack
- *   assembly — the fields here deliberately match SII-92, SII-93 and
- *   the inlined sibling fetcher types byte for byte.
+ * Source/observation shapes come from `src/types.ts`.
  *
  * Failure isolation:
  *   Sources run under `Promise.allSettled`. Each source is wrapped in
@@ -26,43 +21,42 @@
  *   deferred (see the M1 fail clause in SII-103).
  */
 
-export interface Observation {
-  source: string;
-  source_sku: string;
-  /** ISO 8601 UTC with milliseconds, e.g. `2026-09-20T13:45:01.123Z`. */
-  observed_at: string;
-  price: number;
-  currency: string;
-  name?: string;
-  brand?: string;
-  size?: { value: number; unit: string };
-  gtins: string[];
-  /** Original payload node, retained verbatim for downstream debugging. */
-  raw: unknown;
-}
+import type { Observation, Source } from "./types.js";
+import { minkobmand } from "./sources/minkobmand.js";
+import { rema } from "./sources/rema.js";
+import { spar } from "./sources/spar.js";
+import { nemlig } from "./sources/nemlig.js";
+import { netto } from "./sources/netto.js";
+import { fotex } from "./sources/fotex.js";
+import { bilkatogo } from "./sources/bilkatogo.js";
+import { lidl } from "./sources/lidl.js";
 
-/** A source is a zero-arg factory returning an async iterable of observations. */
-export type Source = () => AsyncIterable<Observation>;
+export type { Observation, Source };
 
 /**
- * Writer contract — local placeholder for the shared writer that lives
- * in SII-93's `src/writer.ts`. Production wiring happens in `src/index.ts`.
- * `write` consumes the entire stream and returns the number of rows
- * inserted. It MUST throw on the first malformed observation or write
- * failure so the orchestrator can attribute the failure to a source.
+ * Writer contract for SII-93's `writeObservations`. `write` consumes
+ * the entire stream and returns the number of rows inserted. It MUST
+ * throw on the first malformed observation or write failure so the
+ * orchestrator can attribute the failure to a source.
  */
 export interface Writer {
   write(stream: AsyncIterable<Observation>): Promise<number>;
 }
 
 /**
- * Registered source list. SII-92, SII-94, SII-95, SII-96, SII-97, SII-98
- * each export a `Source` from `src/sources/<slug>.ts`. Adding a new
- * source means appending one import to the list below — nothing else.
- *
- * Empty by design: this issue owns the wiring, not the fetchers.
+ * Registered source list. Adding a collector means appending one
+ * import below — nothing else.
  */
-export const sources: Source[] = [];
+export const sources: Source[] = [
+  minkobmand,
+  rema,
+  spar,
+  nemlig,
+  netto,
+  fotex,
+  bilkatogo,
+  lidl,
+];
 
 export interface SourceResult {
   /** `true` when the source ran and wrote every fetched observation. */
