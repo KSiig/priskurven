@@ -19,6 +19,7 @@
  * @see https://linear.app/siig/issue/SII-97
  */
 
+import type { Observation } from '../types.js';
 import {
   algoliaSearchUrl,
   paginateAlgoliaCatalog,
@@ -40,7 +41,7 @@ const CONFIG: AlgoliaConfig = {
  * POST per Algolia page (`hitsPerPage=1000`) until `nbPages`.  Yields
  * nothing when the env is unset.
  */
-export async function* bilkatogo(): AsyncIterable<import('./algolia.js').Observation> {
+export async function* bilkatogo(): AsyncIterable<Observation> {
   const env = readAlgoliaEnv(CONFIG);
   if (env === null) return;
   const url = algoliaSearchUrl(env.appId, env.path);

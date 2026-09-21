@@ -18,36 +18,13 @@
  * Canonical id is `objectID`.  Price is
  * `storeData[firstKey].price / 100` (øre -> DKK).
  *
- * The {@link Observation} / {@link Source} type aliases are inlined in
- * this module — `src/types.ts` is owned by SII-92 and not yet merged
- * onto `main` at the time of SII-97.
+ * Observation / Source come from `src/types.ts`.
  *
  * @see https://linear.app/siig/issue/SII-97
  * @see https://github.com/Herover/heissepreise/blob/master/stores/salling-lib.js
  */
 
-/**
- * Canonical observation emitted by every Priskurven source.  The shape
- * is owned by SII-103; this file inlines it so the module stands alone
- * until the shared type module lands.
- */
-export type Observation = {
-  source: string;
-  source_sku: string;
-  /** ISO 8601 UTC with milliseconds, e.g. `2026-09-20T13:45:01.123Z`. */
-  observed_at: string;
-  price: number;
-  currency: string;
-  name?: string;
-  brand?: string;
-  size?: { value: number; unit: string };
-  gtins: string[];
-  /** Original payload node, retained verbatim for downstream debugging. */
-  raw: unknown;
-};
-
-/** A source is a zero-arg factory returning an async iterable of observations. */
-export type Source = () => AsyncIterable<Observation>;
+import type { Observation } from '../types.js';
 
 /**
  * Subset of the Algolia hit payload used by Salling stores.  Only the
