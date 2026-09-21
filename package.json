@@ -4,6 +4,10 @@
   "private": true,
   "description": "Danish grocery shelf-price history. M1 shelf collector.",
   "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
