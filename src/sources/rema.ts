@@ -7,11 +7,12 @@
  * barcode); `bar_codes` are emitted as EAN-13s in `gtins` after
  * filtering out in-store 20..29 prefixes and short PLUs.
  *
- * SII-94 deliverable.  The {@link Observation} / {@link Source} type
- * aliases are local until SII-103 hoists them into a shared module.
+ * SII-94 deliverable. Observation / Source come from `src/types.ts`.
  *
  * @see https://linear.app/siig/issue/SII-94
  */
+
+import type { Observation } from '../types.js';
 
 export const SOURCE = 'rema' as const;
 export const CURRENCY = 'DKK' as const;
@@ -23,29 +24,6 @@ export const CURRENCY = 'DKK' as const;
  */
 export const REMA_CATALOG_URL =
   'https://cphapp.rema1000.dk/api/v1/catalog/store/1/withchildren' as const;
-
-/**
- * Canonical observation emitted by every Priskurven source.  The shape
- * is owned by SII-103; this file inlines it so the module stands
- * alone until the shared type module lands.
- */
-export type Observation = {
-  source: string;
-  source_sku: string;
-  /** ISO 8601 UTC with milliseconds, e.g. `2026-09-20T13:45:01.123Z`. */
-  observed_at: string;
-  price: number;
-  currency: string;
-  name?: string;
-  brand?: string;
-  size?: { value: number; unit: string };
-  gtins: string[];
-  /** Original payload node, retained verbatim for downstream debugging. */
-  raw: unknown;
-};
-
-/** A source is a zero-arg factory returning an async iterable of observations. */
-export type Source = () => AsyncIterable<Observation>;
 
 /** Single item inside an Rema category. */
 export type RemaItem = {
