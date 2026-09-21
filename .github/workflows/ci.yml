@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
 
       # npm ci requires package-lock.json; npm install as a fallback.
       # Both steps are intentionally unconditional: a fixture-test
@@ -41,7 +41,7 @@ jobs:
 
   deploy:
     # main-only. Re-runs tests do not redeploy.
-    name: Deploy to GCS (and Worker, if wrangler.toml exists)
+    name: Deploy to GCS
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -90,19 +90,34 @@ jobs:
           gcloud storage cp function.zip \
             gs://lateral-booking-506410-k4-priskurven/function.zip
 
-      # SII-99 owns wrangler.toml. Until that lands, the deploy step
-      # is skipped via hashFiles so the first green main still
-      # uploads the zip and turns green. Algolia keys are not
-      # referenced in this YAML (SII-110 stores them as secrets).
-      # Inputs and secrets below match the contract declared in
-      # KSiig/homelab/.github/workflows/cloudflare-deploy.yml@main
-      # (verified by reading the workflow at @main before writing).
-      - name: Deploy Cloudflare Worker (when wrangler.toml exists)
-        if: hashFiles('wrangler.toml') != ''
-        uses: KSiig/homelab/.github/workflows/cloudflare-deploy.yml@main
-        with:
-          working_directory: "."
-          command: deploy
-          cloudflare_account_id: "5b3269050c8afff008527d038d4f2538"
-        secrets:
-          cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  # hashFiles in a job-level if: is evaluated before checkout, so
+  # wrangler.toml has to be detected in a preceding job.
+  wrangler:
+    name: Detect wrangler.toml
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -f wrangler.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Reusable workflows can only be referenced from jobs.<id>.uses,
+  # never from steps.<id>.uses.
+  deploy-worker:
+    name: Deploy Cloudflare Worker
+    needs: [wrangler]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.wrangler.outputs.present == 'true'
+    uses: KSiig/homelab/.github/workflows/cloudflare-deploy.yml@main
+    with:
+      working_directory: "."
+      command: deploy
+      cloudflare_account_id: "5b3269050c8afff008527d038d4f2538"
+    secrets:
+      cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
