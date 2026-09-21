@@ -120,6 +120,17 @@ describe('rema source', () => {
     }
   });
 
+  it('observed_at is pinned once per run (all observations share the same timestamp)', async () => {
+    const catalog = JSON.parse(await readFile(fixturePath, 'utf8')) as RemaCatalog;
+    const obs = observationsFromCatalog(catalog);
+    expect(obs.length).toBeGreaterThan(1);
+    const first = obs[0]!;
+    const pinned = first.observed_at;
+    for (const o of obs) {
+      expect(o.observed_at).toBe(pinned);
+    }
+  });
+
   it('price is a finite number', async () => {
     const catalog = JSON.parse(await readFile(fixturePath, 'utf8')) as RemaCatalog;
     const obs = observationsFromCatalog(catalog);

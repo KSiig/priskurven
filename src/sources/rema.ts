@@ -79,7 +79,7 @@ export function isValidEan13(s: unknown): s is string {
   return check === s.charCodeAt(12) - 48;
 }
 
-function toObservation(item: RemaItem): Observation {
+function toObservation(item: RemaItem, observedAt: string): Observation {
   const price =
     item.pricing && typeof item.pricing.price === 'number'
       ? item.pricing.price
@@ -90,7 +90,7 @@ function toObservation(item: RemaItem): Observation {
   const obs: Observation = {
     source: SOURCE,
     source_sku: String(item.id),
-    observed_at: new Date().toISOString(),
+    observed_at: observedAt,
     price,
     currency: CURRENCY,
     gtins,
@@ -104,16 +104,20 @@ function toObservation(item: RemaItem): Observation {
 
 /**
  * Pure transform: walk a parsed Rema catalog payload and emit
- * observations in document order.  Exported so tests can drive the
- * mapping from a fixture without going through the network.
+ * observations in document order.  A single `observed_at` timestamp
+ * is pinned once per call so the run can be selected by that
+ * timestamp (it is part of the observation primary key).  Exported
+ * so tests can drive the mapping from a fixture without going
+ * through the network.
  */
 export function observationsFromCatalog(catalog: RemaCatalog): Observation[] {
   const out: Observation[] = [];
+  const observedAt = new Date().toISOString();
   for (const dept of catalog.departments ?? []) {
     for (const cat of dept.categories ?? []) {
       for (const item of cat.items ?? []) {
         if (item == null) continue;
-        out.push(toObservation(item));
+        out.push(toObservation(item, observedAt));
       }
     }
   }
@@ -139,28 +143,18 @@ export async function fetchRemaCatalog(
 }
 
 /**
- * Cached, lazy-initialised fetcher.  A single invocation of `rema()`
- * issues exactly one HTTP GET; subsequent iterations reuse the
- * in-memory payload.
- */
-let cached: Promise<RemaCatalog> | null = null;
-function liveCatalog(): Promise<RemaCatalog> {
-  if (!cached) cached = fetchRemaCatalog();
-  return cached;
-}
-
-/** Reset the in-memory cache.  Used by tests; not exported as part of {@link Source}. */
-export function _resetCache(): void {
-  cached = null;
-}
-
-/**
  * The Rema source.  Implements {@link Source}: zero-arg factory
  * returning an `AsyncIterable<Observation>`.  Iterating the iterable
  * triggers exactly one HTTP GET to {@link REMA_CATALOG_URL}.
+ *
+ * Note: the catalog is fetched fresh on every invocation.  A
+ * process-lifetime cache was tried and reverted: Cloud Functions
+ * warm-start reuses the module, so a cached payload would carry
+ * the previous run's prices with a fresh `observed_at`, producing
+ * stale observations.
  */
 export async function* rema(): AsyncIterable<Observation> {
-  const catalog = await liveCatalog();
+  const catalog = await fetchRemaCatalog();
   for (const obs of observationsFromCatalog(catalog)) {
     yield obs;
   }
