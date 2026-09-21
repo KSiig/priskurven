@@ -25,28 +25,7 @@
  * Spec: SII-96. No isolation logic — see SII-103.
  */
 
-/**
- * Canonical observation emitted by every Priskurven source.  The shape
- * is owned by SII-103; this file inlines it so the module stands
- * alone until the shared type module lands on main.
- */
-export type Observation = {
-  source: string;
-  source_sku: string;
-  /** ISO 8601 UTC with milliseconds, e.g. `2026-09-20T13:45:01.123Z`. */
-  observed_at: string;
-  price: number;
-  currency: string;
-  name?: string;
-  brand?: string;
-  size?: { value: number; unit: string };
-  gtins: string[];
-  /** Original payload node, retained verbatim for downstream debugging. */
-  raw: unknown;
-};
-
-/** A source is a zero-arg factory returning an async iterable of observations. */
-export type Source = () => AsyncIterable<Observation>;
+import type { Observation } from '../types.js';
 
 export const SOURCE = 'nemlig' as const;
 export const CURRENCY = 'DKK' as const;
