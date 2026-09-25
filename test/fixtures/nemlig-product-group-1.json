@@ -1,0 +1,18 @@
+{
+  "Products": [
+    {
+      "Id": "5041620",
+      "Name": "Druer Autumncrisp øko.",
+      "Price": 32.0,
+      "Brand": "Gasa Odense",
+      "TemplateName": "productlistitem"
+    },
+    {
+      "Id": "5602181",
+      "Name": "Æbler Pink Lady",
+      "Price": 25.0,
+      "Brand": null,
+      "TemplateName": "productlistitem"
+    }
+  ]
+}

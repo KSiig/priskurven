@@ -1,0 +1,11 @@
+name = "priskurven"
+compatibility_date = "2026-08-01"
+
+# M1: read-only /v1/history endpoint in front of D1. The placeholder
+# database_id is overwritten by the SII-91 terraform output when the
+# homelab stack applies (see homelab/cloudflare/priskurven.tf). No
+# migrations_dir here on purpose — migrations live in homelab (SII-109).
+[[d1_databases]]
+binding = "DB"
+database_name = "priskurven"
+database_id = "00000000-0000-0000-0000-000000000000"

@@ -1,0 +1,24 @@
+{
+  "hits": [
+    {
+      "objectID": "netto-prod-100",
+      "productName": "Havregryn 1kg",
+      "brand": "Netto",
+      "units": 1,
+      "unitsOfMeasure": "kg",
+      "storeData": { "store-1234": { "price": 1295 } }
+    },
+    {
+      "objectID": "netto-prod-101",
+      "productName": "Mælk 1,5% 1L",
+      "brand": "Arla",
+      "units": 1,
+      "unitsOfMeasure": "ltr",
+      "storeData": { "store-1234": { "price": 995 } }
+    }
+  ],
+  "nbHits": 6,
+  "page": 0,
+  "nbPages": 3,
+  "hitsPerPage": 2
+}

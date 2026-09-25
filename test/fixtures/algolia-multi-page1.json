@@ -1,0 +1,32 @@
+{
+  "hits": [
+    {
+      "objectID": "netto-prod-102",
+      "productName": "Yoghurt Naturell 500g",
+      "brand": "Arla",
+      "units": 500,
+      "unitsOfMeasure": "g",
+      "storeData": { "store-1234": { "price": 1495 } }
+    },
+    {
+      "objectID": "netto-prod-103",
+      "productName": "Smør 250g",
+      "brand": "Lurpak",
+      "units": 250,
+      "unitsOfMeasure": "g",
+      "storeData": { "store-1234": { "price": 2995 } }
+    },
+    {
+      "objectID": "netto-prod-104",
+      "productName": "Ost Skive 200g",
+      "brand": "Castello",
+      "units": 200,
+      "unitsOfMeasure": "g",
+      "storeData": { "store-1234": { "price": 3495 } }
+    }
+  ],
+  "nbHits": 6,
+  "page": 1,
+  "nbPages": 3,
+  "hitsPerPage": 2
+}

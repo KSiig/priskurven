@@ -1,0 +1,16 @@
+{
+  "hits": [
+    {
+      "objectID": "netto-prod-105",
+      "productName": "Æg 12 stk",
+      "brand": "Netto",
+      "units": 12,
+      "unitsOfMeasure": "stk",
+      "storeData": { "store-1234": { "price": 3995 } }
+    }
+  ],
+  "nbHits": 6,
+  "page": 2,
+  "nbPages": 3,
+  "hitsPerPage": 2
+}

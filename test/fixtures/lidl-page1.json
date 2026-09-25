@@ -1,0 +1,101 @@
+{
+  "numFound": 9,
+  "fetchsize": 3,
+  "maxfetchsize": 1000,
+  "offset": 4,
+  "items": [
+    {
+      "gridbox": {
+        "data": {
+          "productId": 11029502,
+          "fullTitle": "Kartofler",
+          "price": {
+            "basePrice": {
+              "prefix": false,
+              "text": "Pr. kg 10,00"
+            },
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "packaging": {
+              "text": "1 kg"
+            },
+            "price": 10.0,
+            "priceTheme": "white_red",
+            "specialTaxes": [],
+            "superscript": "*1",
+            "variantsHaveDifferentPrices": false
+          }
+        },
+        "meta": {
+          "ean": "20306168"
+        }
+      }
+    },
+    {
+      "gridbox": {
+        "data": {
+          "productId": 11029555,
+          "fullTitle": "Majskolbe",
+          "price": {
+            "basePrice": {
+              "prefix": false,
+              "text": "Pr. stk. 4,00"
+            },
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "packaging": {
+              "text": "Stk."
+            },
+            "price": 4.0,
+            "priceTheme": "white_red",
+            "specialTaxes": [],
+            "superscript": "*1",
+            "variantsHaveDifferentPrices": false
+          }
+        }
+      }
+    },
+    {
+      "gridbox": {
+        "data": {
+          "productId": 11029672,
+          "fullTitle": "Ryneczek Lidla Danske håndsorterede gulerødder",
+          "price": {
+            "basePrice": {
+              "prefix": false,
+              "text": "Pr. kg 12,00"
+            },
+            "currencyCode": "DKK",
+            "currencyCodeSecond": "",
+            "currencySymbol": "DKK",
+            "currencySymbolSecond": "",
+            "hasStar": false,
+            "hasVat": false,
+            "packaging": {
+              "text": "1 kg"
+            },
+            "price": 12.0,
+            "priceTheme": "white_red",
+            "specialTaxes": [],
+            "superscript": "*1",
+            "variantsHaveDifferentPrices": false
+          },
+          "brand": {
+            "name": "Ryneczek Lidla"
+          }
+        },
+        "meta": {
+          "ean": "20239015"
+        }
+      }
+    }
+  ]
+}
