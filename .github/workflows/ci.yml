@@ -40,8 +40,9 @@ jobs:
         run: npm test
 
   deploy:
-    # main-only. Re-runs tests do not redeploy.
-    name: Deploy to GCS
+    # main-only. Re-runs of a failing job do NOT redeploy — the workflow
+    # only runs end-to-end on a clean `main` push.
+    name: Deploy priskurven-collect
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -52,27 +53,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+
+      - name: Install dependencies
+        if: hashFiles('package-lock.json') != ''
+        run: npm ci
+
+      # SII-113: build the TS sources to dist/ so the function has a
+      # runnable handler. The package.json `"main"` points at
+      # `dist/src/index.js`; Cloud Functions resolves `handler` from that.
+      - name: Build the collector (tsc)
+        run: npm run build
+
       # SII-91 owns the GCS bucket lateral-booking-506410-k4-priskurven
       # and the Gen 2 function priskurven-collect that reads
-      # function.zip from it. SII-101 ships the upload. No
-      # `gcloud functions deploy` here on purpose.
-      # Install gcloud SDK before auth so `gcloud storage cp` runs.
+      # function.zip from it.
+      # Install gcloud SDK before WIF auth so subsequent `gcloud` steps run.
       - name: Install Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: lateral-booking-506410-k4
 
+      # WIF auth — writes gha-creds-*.json into the workspace, which is
+      # why the zip step below excludes that pattern explicitly.
       - name: Authenticate to Google Cloud via WIF
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SA_EMAIL }}
 
-      # Zip the repo root minus noise. node_modules / dist / the zip
-      # itself are excluded so the artifact stays small. The exact
-      # contents of function.zip on first green main are intentionally
-      # not the deliverable of this issue — SII-100 verifies that the
-      # uploaded handler is the real one.
+      # Zip the repo root for the function source. `dist/` IS included
+      # (built by the step above). Tests, node_modules, dev tooling, the
+      # zip itself, and the WIF credentials JSON are excluded. SII-112
+      # blocks Terraform from restoring the placeholder over this object.
       - name: Build function.zip
         run: |
           zip -r function.zip . \
@@ -80,7 +96,15 @@ jobs:
                '.github/*' \
                '*.zip' \
                '**/node_modules/*' \
-               '**/dist/*' \
+               '**/dist/**/*.ts' \
+               'test/**' \
+               'vitest.config.ts' \
+               'tsconfig.json' \
+               '.gitignore' \
+               'README.md' \
+               'LICENSE' \
+               'PLAN.md' \
+               'gha-creds-*.json' \
                '**/.DS_Store'
 
       # SII-91 Terraform pins this object path. Do not invent a
@@ -89,6 +113,76 @@ jobs:
         run: |
           gcloud storage cp function.zip \
             gs://lateral-booking-506410-k4-priskurven/function.zip
+
+      # SII-113: Gen 2 builds a new function revision only on
+      # `gcloud functions deploy`. Uploading the zip alone does not.
+      # The full contract (per the SII-113 issue body) must be passed;
+      # `--set-env-vars` and `--set-secrets` replace the whole set,
+      # so omitting any binding is a failed deploy. Env values come
+      # from the live function revision on every push to keep the
+      # deploy idempotent against Terraform drift.
+      - name: Deploy Cloud Function (Gen 2)
+        env:
+          CLOUDFLARE_ACCOUNT_ID_FROM_FN: '5b3269050c8afff008527d038d4f2538'
+        run: |
+          set -euo pipefail
+
+          REGION=europe-west1
+          FUNCTION=priskurven-collect
+          SA=priskurven-fn@lateral-booking-506410-k4.iam.gserviceaccount.com
+
+          # Read the live D1 database id from the current function
+          # revision. Falls back to the SII-109 + SII-91 constant if
+          # `gcloud functions describe` is unavailable (e.g. first
+          # green main before any prior deploy).
+          DB_ID="$(gcloud functions describe "$FUNCTION" \
+            --region="$REGION" --gen2 --project=lateral-booking-506410-k4 \
+            --format='value(serviceConfig.environmentVariables.CLOUDFLARE_D1_DATABASE_ID)' \
+            2>/dev/null || true)"
+          if [ -z "$DB_ID" ]; then
+            DB_ID='6397206b-e59e-4b9b-a3b3-6dc9674e1325'
+          fi
+
+          gcloud functions deploy "$FUNCTION" \
+            --gen2 \
+            --region="$REGION" \
+            --runtime=nodejs22 \
+            --source=gs://lateral-booking-506410-k4-priskurven/function.zip \
+            --entry-point=handler \
+            --memory=256Mi \
+            --timeout=300 \
+            --service-account="$SA" \
+            --no-allow-unauthenticated \
+            --trigger-http \
+            --set-env-vars="DB_MODE=d1,CLOUDFLARE_ACCOUNT_ID=5b3269050c8afff008527d038d4f2538,CLOUDFLARE_D1_DATABASE_ID=$DB_ID" \
+            --set-secrets="CLOUDFLARE_API_TOKEN=cloudflare-api-token:latest" \
+            --project=lateral-booking-506410-k4
+
+          # Sanity check: every binding the SII-113 issue contract lists
+          # must still be present on the deployed revision. Fail loudly
+          # if any binding is missing rather than discover it after merge.
+          echo "--- post-deploy describe ---"
+          gcloud functions describe "$FUNCTION" \
+            --region="$REGION" --gen2 --project=lateral-booking-506410-k4 \
+            --format='yaml(serviceConfig.environmentVariables,serviceConfig.secretEnvironmentVariables,buildConfig.runtime,buildConfig.entryPoint,serviceConfig.maxInstanceCount,serviceConfig.availableMemory,serviceConfig.timeoutSeconds,serviceConfig.serviceAccountEmail)' \
+          | tee /tmp/post-deploy.yaml
+
+          # Each contract field must be present.
+          grep -q 'CLOUDFLARE_D1_DATABASE_ID' /tmp/post-deploy.yaml || { echo "MISSING env binding CLOUDFLARE_D1_DATABASE_ID"; exit 1; }
+          grep -q 'CLOUDFLARE_API_TOKEN' /tmp/post-deploy.yaml || { echo "MISSING secret binding CLOUDFLARE_API_TOKEN"; exit 1; }
+          grep -q 'DB_MODE: d1' /tmp/post-deploy.yaml || { echo "MISSING env binding DB_MODE=d1"; exit 1; }
+          grep -q 'nodejs22' /tmp/post-deploy.yaml || { echo "MISSING runtime nodejs22"; exit 1; }
+          grep -q 'handler' /tmp/post-deploy.yaml || { echo "MISSING entry point handler"; exit 1; }
+          grep -q "$SA" /tmp/post-deploy.yaml || { echo "MISSING runtime SA $SA"; exit 1; }
+
+          # Confirm the zip we shipped contains the compiled handler, not
+          # raw TS. Catches a regression where someone re-adds `dist/*`
+          # to the zip exclusions.
+          TMPZIP="$(mktemp -d)/function.zip"
+          gsutil cp gs://lateral-booking-506410-k4-priskurven/function.zip "$TMPZIP"
+          unzip -l "$TMPZIP" | grep -q 'dist/src/index.js' || { echo "MISSING compiled handler dist/src/index.js in zip"; exit 1; }
+          unzip -l "$TMPZIP" | grep -q 'gha-creds-' && { echo "CRED LEAK: zip contains gha-creds-*.json"; exit 1; } || true
+          echo "Zip contents verified: handler present, no credential leak."
 
   # hashFiles in a job-level if: is evaluated before checkout, so
   # wrangler.toml has to be detected in a preceding job.
