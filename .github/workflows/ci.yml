@@ -91,6 +91,10 @@ jobs:
       # blocks Terraform from restoring the placeholder over this object.
       - name: Build function.zip
         run: |
+          # tsconfig.json is REQUIRED in the zip: Cloud Build runs
+          # `npm run build` (which is `tsc -p tsconfig.json`) inside
+          # the function deploy, and TS5058 fires without it. Excluding
+          # it to "keep the zip small" breaks the function deploy.
           zip -r function.zip . \
             -x '.git/*' \
                '.github/*' \
@@ -99,7 +103,6 @@ jobs:
                '**/dist/**/*.ts' \
                'test/**' \
                'vitest.config.ts' \
-               'tsconfig.json' \
                '.gitignore' \
                'README.md' \
                'LICENSE' \
