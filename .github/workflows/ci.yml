@@ -150,7 +150,7 @@ jobs:
             --gen2 \
             --region="$REGION" \
             --runtime=nodejs22 \
-            --source=gs://lateral-booking-506410-k4-priskurven/function.zip \
+            --source=./function.zip \
             --entry-point=handler \
             --memory=256Mi \
             --timeout=300 \
