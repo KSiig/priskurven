@@ -3,18 +3,17 @@ compatibility_date = "2026-08-01"
 main = "src/history.ts"
 
 # SII-114: publish on the custom domain only. The deploy job already
-# reaches `wrangler deploy` (SII-101 PR #7). Without `workers_dev = false`
-# and a `[[routes]]` entry, wrangler fails with:
+# reaches `wrangler deploy` (SII-101 PR #7). Without `workers_dev = false`,
+# wrangler fails with:
 #   "You need to register a workers.dev subdomain before publishing to
 #    workers.dev" (run 36135169646).
+#
+# Hostname registration (`priskurven.siig.tech`) is owned by
+# `cloudflare_workers_custom_domain.priskurven_history` in homelab
+# Terraform (PR KSiig/homelab#25). Wrangler deploys the Worker script
+# only — it does not register routes — so the deploy does not need
+# Workers Routes:Edit on the Cloudflare API token.
 workers_dev = false
-
-# Custom domain via the Workers domains API. Zone `siig.tech` is already
-# active in Cloudflare account 5b3269050c8afff008527d038d4f2538. DNS lives
-# in homelab (SII-91). No apex attach, no `*.workers.dev` fallback.
-[[routes]]
-pattern = "priskurven.siig.tech"
-custom_domain = true
 
 # M1: read-only /v1/history endpoint in front of D1. The placeholder
 # database_id is overwritten by the SII-91 terraform output when the
