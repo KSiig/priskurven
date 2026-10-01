@@ -4,6 +4,7 @@ import {
   createD1ClientFromEnv,
   createD1RestClient,
   type D1Client,
+  type D1Statement,
 } from "../src/d1";
 import type { Observation, Source } from "../src/types";
 import { normalizeObservedAt, writeObservations } from "../src/writer";
@@ -108,6 +109,31 @@ describe("writeObservations", () => {
         "INSERT INTO observations (source, source_sku, observed_at, price, currency, name, brand, size_value, size_unit, gtins, raw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       );
     }
+  });
+
+  it("sends inserts through execBatch when the client supports it", async () => {
+    const batches: D1Statement[][] = [];
+    const client: D1Client = {
+      async exec() {
+        throw new Error("exec should not be used when execBatch exists");
+      },
+      async execBatch(statements) {
+        batches.push(statements.map((statement) => ({ ...statement })));
+      },
+    };
+    const written = await writeObservations(
+      fromArray([
+        mkObs({ source_sku: "r1" }),
+        mkObs({ source_sku: "r2" }),
+        mkObs({ source_sku: "r3" }),
+      ]),
+      client,
+    );
+    expect(written).toBe(3);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toHaveLength(3);
+    expect(batches[0]![0]?.params?.[1]).toBe("r1");
+    expect(batches[0]![2]?.params?.[1]).toBe("r3");
   });
 
   it("writes empty gtins as the literal JSON array []", async () => {
@@ -267,6 +293,61 @@ describe("createD1RestClient", () => {
     const body = JSON.parse(call.init?.body as string);
     expect(body.sql).toBe("SELECT 1");
     expect(body.params).toEqual([42]);
+  });
+
+  it("posts a batch body from execBatch", async () => {
+    const calls: Array<{ body: string }> = [];
+    const fakeFetch: typeof fetch = async (_input, init) => {
+      calls.push({ body: String(init?.body ?? "") });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          result: [{ success: true }, { success: true }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const client = createD1RestClient({
+      accountId: "acc123",
+      databaseId: "db456",
+      apiToken: "tok789",
+      fetchImpl: fakeFetch,
+    });
+    await client.execBatch!([
+      { sql: "INSERT INTO observations (source) VALUES (?)", params: ["rema"] },
+      { sql: "INSERT INTO observations (source) VALUES (?)", params: ["spar"] },
+    ]);
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.batch).toEqual([
+      {
+        sql: "INSERT INTO observations (source) VALUES (?)",
+        params: ["rema"],
+      },
+      {
+        sql: "INSERT INTO observations (source) VALUES (?)",
+        params: ["spar"],
+      },
+    ]);
+  });
+
+  it("rejects a batch when one statement reports success: false", async () => {
+    const fakeFetch: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          result: [{ success: true }, { success: false, errors: ["constraint"] }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    const client = createD1RestClient({
+      accountId: "a",
+      databaseId: "b",
+      apiToken: "t",
+      fetchImpl: fakeFetch,
+    });
+    await expect(
+      client.execBatch!([{ sql: "SELECT 1" }, { sql: "SELECT 2" }]),
+    ).rejects.toThrow(/constraint/);
   });
 
   it("surfaces non-2xx responses", async () => {

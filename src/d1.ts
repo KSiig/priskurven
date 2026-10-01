@@ -13,10 +13,22 @@
  * boundary (SII-103).
  */
 
+/** One parameterised statement. */
+export interface D1Statement {
+  sql: string;
+  params?: readonly unknown[];
+}
+
 /** Minimal D1 client surface that the writer needs. */
 export interface D1Client {
   /** Execute a parameterised statement. The writer does not read rows back. */
   exec(sql: string, params?: readonly unknown[]): Promise<void>;
+  /**
+   * Execute many statements in one HTTP call. The writer uses this so a
+   * full catalog does not spend the Cloud Run request budget on one
+   * round trip per row. Clients that omit it are called via `exec`.
+   */
+  execBatch?(statements: readonly D1Statement[]): Promise<void>;
 }
 
 export interface D1RestConfig {
@@ -40,33 +52,62 @@ export function createD1RestClient(config: D1RestConfig): D1Client {
     config.accountId,
   )}/d1/database/${encodeURIComponent(config.databaseId)}/query`;
 
+  async function post(body: unknown): Promise<void> {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(
+        `D1 query failed (${res.status} ${res.statusText}): ${text}`,
+      );
+    }
+    // Cloudflare wraps results in { success, result, errors }; the
+    // writer only inserts and does not inspect row data. A batch
+    // response is an array of per-statement results, and any one of
+    // those can fail while the HTTP status is still 200.
+    const payload = (await res.json()) as {
+      success?: boolean;
+      errors?: unknown;
+      result?: unknown;
+    };
+    if (payload.success === false) {
+      throw new Error(`D1 query rejected: ${JSON.stringify(payload.errors)}`);
+    }
+    if (Array.isArray(payload.result)) {
+      for (const item of payload.result) {
+        if (
+          item &&
+          typeof item === "object" &&
+          (item as { success?: boolean }).success === false
+        ) {
+          throw new Error(
+            `D1 query rejected: ${JSON.stringify(
+              (item as { errors?: unknown }).errors,
+            )}`,
+          );
+        }
+      }
+    }
+  }
+
   return {
     async exec(sql: string, params?: readonly unknown[]): Promise<void> {
-      const body = JSON.stringify({ sql, params: params ?? [] });
-      const res = await fetchImpl(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body,
+      await post({ sql, params: params ?? [] });
+    },
+    async execBatch(statements: readonly D1Statement[]): Promise<void> {
+      if (statements.length === 0) return;
+      await post({
+        batch: statements.map((statement) => ({
+          sql: statement.sql,
+          params: statement.params ?? [],
+        })),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(
-          `D1 query failed (${res.status} ${res.statusText}): ${text}`,
-        );
-      }
-      // Cloudflare wraps results in { success, result, errors }; the
-      // writer only inserts and does not inspect `result`. We still
-      // surface a top-level failure flag to fail fast on API errors.
-      const payload = (await res.json()) as {
-        success?: boolean;
-        errors?: unknown;
-      };
-      if (payload.success === false) {
-        throw new Error(`D1 query rejected: ${JSON.stringify(payload.errors)}`);
-      }
     },
   };
 }

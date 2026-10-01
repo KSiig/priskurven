@@ -125,13 +125,30 @@ describe('fetchNemligFrontpage', () => {
   it('sends Accept: application/json and parses 2xx JSON', async () => {
     const body = JSON.stringify({ content: [], Settings: {} });
     let capturedAccept: string | null = null;
+    let capturedRedirect: string | undefined;
+    let capturedSignal: AbortSignal | null | undefined;
     const fakeFetch = async (_url: string | URL, init?: RequestInit) => {
       capturedAccept = (init?.headers as Record<string, string> | undefined)?.Accept ?? null;
+      capturedRedirect = init?.redirect;
+      capturedSignal = init?.signal;
       return new Response(body, { status: 200 });
     };
     const fp = await fetchNemligFrontpage(fakeFetch as unknown as typeof fetch);
     expect(capturedAccept).toBe('application/json');
+    expect(capturedRedirect).toBe('manual');
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
     expect(fp.Settings).toEqual({});
+  });
+
+  it('fails a Queue-it redirect instead of following it', async () => {
+    const fakeFetch = async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: 'https://nemlig.queue-it.net/?c=nemlig' },
+      });
+    await expect(
+      fetchNemligFrontpage(fakeFetch as unknown as typeof fetch),
+    ).rejects.toThrow(/HTTP 302 location=https:\/\/nemlig\.queue-it\.net/);
   });
 });
 
