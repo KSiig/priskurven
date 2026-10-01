@@ -182,7 +182,8 @@ jobs:
           # raw TS. Catches a regression where someone re-adds `dist/*`
           # to the zip exclusions.
           TMPZIP="$(mktemp -d)/function.zip"
-          gsutil cp gs://lateral-booking-506410-k4-priskurven/function.zip "$TMPZIP"
+          gsutil cp gs://lateral-booking-506410-k4-priskurven/function.zip "$TMPZIP" 2>/dev/null \
+            || gcloud storage cp gs://lateral-booking-506410-k4-priskurven/function.zip "$TMPZIP"
           unzip -l "$TMPZIP" | grep -q 'dist/src/index.js' || { echo "MISSING compiled handler dist/src/index.js in zip"; exit 1; }
           unzip -l "$TMPZIP" | grep -q 'gha-creds-' && { echo "CRED LEAK: zip contains gha-creds-*.json"; exit 1; } || true
           echo "Zip contents verified: handler present, no credential leak."
