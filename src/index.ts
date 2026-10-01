@@ -3,21 +3,55 @@
  *
  * Export name (Cloud Functions `entry_point`): `handler`.
  *
- * The handler is intentionally thin. It builds the SII-93 writer from
- * env and delegates to `runOrchestrator`. SII-91 owns the
- * firebase-functions binding; the handler signature uses `unknown`
- * request/response so it is assignable to whatever SII-91 wires in.
+ * The handler builds the SII-93 writer from env and delegates to
+ * `runOrchestrator`. The functions-framework HTTP wrapper does not
+ * send a returned value, so the handler must end the response itself.
+ * Leaving it open makes Cloud Run hold the Scheduler request until
+ * the 300s timeout and answer 504.
  */
 import { createD1ClientFromEnv } from "./d1.js";
 import { writeObservations } from "./writer.js";
 import { sources, runOrchestrator, type RunResult } from "./orchestrator.js";
 
+interface HttpResponse {
+  status(code: number): { json(body: unknown): void };
+}
+
+function isHttpResponse(value: unknown): value is HttpResponse {
+  if (typeof value !== "object" || value === null || !("status" in value)) {
+    return false;
+  }
+  return typeof value.status === "function";
+}
+
+/** End an HTTP invocation. Returns false when `res` is not a response. */
+export function endHttpResponse(
+  res: unknown,
+  status: number,
+  body: unknown,
+): boolean {
+  if (!isHttpResponse(res)) return false;
+  res.status(status).json(body);
+  return true;
+}
+
 export const handler = async (
   _req?: unknown,
-  _res?: unknown,
+  res?: unknown,
 ): Promise<RunResult> => {
-  const client = createD1ClientFromEnv();
-  return runOrchestrator(sources, {
-    write: (stream) => writeObservations(stream, client),
-  });
+  try {
+    const client = createD1ClientFromEnv();
+    const result = await runOrchestrator(sources, {
+      write: (stream) => writeObservations(stream, client),
+    });
+    endHttpResponse(res, 200, result);
+    return result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("priskurven handler failed", { error: message });
+    if (endHttpResponse(res, 500, { error: message })) {
+      return { perSource: {} };
+    }
+    throw err;
+  }
 };

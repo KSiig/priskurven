@@ -64,6 +64,29 @@ export type NemligProduct = {
 type Fetcher = typeof fetch;
 
 /**
+ * Queue-it sits in front of the JSON frontpage and either holds the
+ * connection or 302s in a loop. Following redirects kept the 2026-10-01
+ * Scheduler run open until Cloud Run killed it at 300s, with zero
+ * Nemlig rows written. `redirect: "manual"` makes that 302 fail the
+ * source immediately. The abort bound covers a held connection.
+ */
+const NEMLIG_FETCH_TIMEOUT_MS = 20_000;
+
+function nemligRequestInit(): RequestInit {
+  return {
+    headers: { Accept: 'application/json' },
+    redirect: 'manual',
+    signal: AbortSignal.timeout(NEMLIG_FETCH_TIMEOUT_MS),
+  };
+}
+
+function nemligHttpError(what: string, res: Response): Error {
+  const location = res.headers.get('location');
+  const where = location ? ` location=${location}` : '';
+  return new Error(`${what} -> HTTP ${res.status}${where}`);
+}
+
+/**
  * EAN-13 checksum per GS1.  Returns true iff `s` is a 13-digit string
  * whose trailing check digit matches the mod-10 algorithm with
  * weights 1,3,1,3,... applied left-to-right over the leading 12
@@ -107,11 +130,9 @@ export async function fetchNemligFrontpage(
   fetcher: Fetcher = fetch,
   url: string = FRONTPAGE_URL,
 ): Promise<NemligFrontpage> {
-  const res = await fetcher(url, {
-    headers: { Accept: 'application/json' },
-  });
+  const res = await fetcher(url, nemligRequestInit());
   if (!res.ok) {
-    throw new Error(`nemlig frontpage GET ${url} -> HTTP ${res.status}`);
+    throw nemligHttpError(`nemlig frontpage GET ${url}`, res);
   }
   return (await res.json()) as NemligFrontpage;
 }
@@ -129,11 +150,12 @@ export async function fetchNemligGroup(
   productGroupId: string,
 ): Promise<NemligGroupResponse> {
   const url = groupUrl(timestamp, timeslot, productGroupId);
-  const res = await fetcher(url, {
-    headers: { Accept: 'application/json' },
-  });
+  const res = await fetcher(url, nemligRequestInit());
   if (!res.ok) {
-    throw new Error(`nemlig group ${productGroupId} GET -> HTTP ${res.status}`);
+    throw nemligHttpError(
+      `nemlig group ${productGroupId} GET`,
+      res,
+    );
   }
   return (await res.json()) as NemligGroupResponse;
 }

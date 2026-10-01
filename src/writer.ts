@@ -19,8 +19,17 @@
  *   PRIMARY KEY (source, source_sku, observed_at)
  */
 
-import type { D1Client } from "./d1";
+import type { D1Client, D1Statement } from "./d1";
 import type { Observation } from "./types";
+
+/**
+ * Inserts per D1 HTTP call. One round trip per row cannot finish the
+ * larger catalogs inside the 300s Cloud Run request timeout: a live
+ * run on 2026-10-01 wrote about 4 rows/sec per source and was killed
+ * with Min Købmand at 1326 of 4434 and SPAR at 1325 of 5042. Fifty
+ * statements per call is the batch the REST API accepts as one POST.
+ */
+const ROWS_PER_REQUEST = 50;
 
 const INSERT_SQL =
   "INSERT INTO observations (" +
@@ -75,28 +84,52 @@ export function normalizeObservedAt(input: string): string {
  * Throws on the first malformed observation or write failure; the
  * caller (SII-103) decides how to isolate per-source failures.
  */
+async function flushStatements(
+  client: D1Client,
+  statements: D1Statement[],
+): Promise<void> {
+  if (statements.length === 0) return;
+  if (client.execBatch) {
+    await client.execBatch(statements);
+    return;
+  }
+  for (const statement of statements) {
+    await client.exec(statement.sql, statement.params);
+  }
+}
+
 export async function writeObservations(
   stream: AsyncIterable<Observation>,
   client: D1Client,
 ): Promise<number> {
   let n = 0;
+  let pending: D1Statement[] = [];
   for await (const obs of stream) {
     const observed_at = normalizeObservedAt(obs.observed_at);
-    const params: readonly unknown[] = [
-      obs.source,
-      obs.source_sku,
-      observed_at,
-      obs.price,
-      obs.currency,
-      obs.name ?? null,
-      obs.brand ?? null,
-      obs.size?.value ?? null,
-      obs.size?.unit ?? null,
-      JSON.stringify(obs.gtins ?? []),
-      JSON.stringify(obs.raw ?? null),
-    ];
-    await client.exec(INSERT_SQL, params);
-    n += 1;
+    pending.push({
+      sql: INSERT_SQL,
+      params: [
+        obs.source,
+        obs.source_sku,
+        observed_at,
+        obs.price,
+        obs.currency,
+        obs.name ?? null,
+        obs.brand ?? null,
+        obs.size?.value ?? null,
+        obs.size?.unit ?? null,
+        JSON.stringify(obs.gtins ?? []),
+        JSON.stringify(obs.raw ?? null),
+      ],
+    });
+    if (pending.length >= ROWS_PER_REQUEST) {
+      const batch = pending;
+      pending = [];
+      await flushStatements(client, batch);
+      n += batch.length;
+    }
   }
+  await flushStatements(client, pending);
+  n += pending.length;
   return n;
 }
