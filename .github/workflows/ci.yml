@@ -150,7 +150,7 @@ jobs:
             --gen2 \
             --region="$REGION" \
             --runtime=nodejs22 \
-            --source=./function.zip \
+            --source=. \
             --entry-point=handler \
             --memory=256Mi \
             --timeout=300 \
