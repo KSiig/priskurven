@@ -9,7 +9,7 @@
  * Sitecore defaults `/webapi/s/0/1/0/...`).
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -432,6 +432,127 @@ describe('nemlig() source', () => {
       await expect(collect(nemlig())).rejects.toThrow(/Settings\.CombinedProductsAndSitecoreTimestamp/);
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+
+  // SII-116: one failed product-group ribbon must not drop the source.
+  // The helper `fetchNemligGroup` still throws on non-2xx; `nemlig()`
+  // catches the throw, logs it, and continues with the next group.
+  it('continues to the next group when one group GET returns HTTP 500', async () => {
+    const frontpage = JSON.parse(readFileSync(FIX_FRONT, 'utf8')) as NemligFrontpage;
+    const ts = frontpage.Settings!.CombinedProductsAndSitecoreTimestamp!;
+    const slot = frontpage.Settings!.TimeslotUtc!;
+    // Two groups: the first 500s (matching the SII-116 production
+    // failure on 34112834-6209-46aa-adec-b0ee7be19351), the second
+    // returns one product. We must see that one product in the
+    // yielded stream and no throw.
+    const badId = '34112834-6209-46aa-adec-b0ee7be19351';
+    const goodId = '96336d6d-85c1-440f-9f57-dfcb6f1f1f91';
+    const badUrl = groupUrl(ts, slot, badId);
+    const goodUrl = groupUrl(ts, slot, goodId);
+
+    // Build a fetch stub that 500s on the bad URL and returns one
+    // product on the good URL. The default branch is reserved so a
+    // stray URL does not silently 200.
+    const goodBody: NemligGroupResponse = {
+      Products: [{ Id: '5606040', Name: 'Minimælk 0,4% 1L', Price: 8.5 }],
+    };
+    const fetchStub: FetchLike = async (input) => {
+      const url = String(input);
+      if (url === FRONTPAGE_URL) {
+        return new Response(JSON.stringify(frontpage), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url === badUrl) {
+        return new Response('boom', { status: 500 });
+      }
+      if (url === goodUrl) {
+        return new Response(JSON.stringify(goodBody), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`unexpected fetch URL in nemlig SII-116 fixture: ${url}`);
+    };
+
+    // Silence the `nemlig source skipped` log line so the test output
+    // stays readable.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchStub as unknown as typeof fetch;
+    try {
+      const rows = await collect(nemlig());
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.source).toBe('nemlig');
+      expect(rows[0]!.source_sku).toBe('5606040');
+      expect(rows[0]!.name).toBe('Minimælk 0,4% 1L');
+      expect(rows[0]!.price).toBe(8.5);
+      // The skip log must carry the agreed error text so cron logs
+      // surface the failing group id.
+      const skipped = errSpy.mock.calls.find(
+        (call) =>
+          Array.isArray(call) &&
+          call[0] === 'nemlig source skipped' &&
+          call[1] &&
+          typeof (call[1] as { group_id?: unknown }).group_id === 'string',
+      );
+      expect(skipped).toBeTruthy();
+      const payload = skipped![1] as {
+        group_id: string;
+        error: string;
+      };
+      expect(payload.group_id).toBe(badId);
+      expect(payload.error).toMatch(
+        new RegExp(`nemlig group ${badId} GET -> HTTP 500`),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      errSpy.mockRestore();
+    }
+  });
+
+  // SII-116: when every group returns a non-2xx status the source
+  // still completes (orchestrator result `ok: true`, `written: 0`),
+  // because the generator finishes without throwing.
+  it('finishes with zero rows and no throw when every group returns a non-2xx status', async () => {
+    const frontpage = JSON.parse(readFileSync(FIX_FRONT, 'utf8')) as NemligFrontpage;
+    const ts = frontpage.Settings!.CombinedProductsAndSitecoreTimestamp!;
+    const slot = frontpage.Settings!.TimeslotUtc!;
+    const badId = '34112834-6209-46aa-adec-b0ee7be19351';
+    const badUrl = groupUrl(ts, slot, badId);
+
+    const fetchStub: FetchLike = async (input) => {
+      const url = String(input);
+      if (url === FRONTPAGE_URL) {
+        return new Response(JSON.stringify(frontpage), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url === badUrl) {
+        return new Response('boom', { status: 502 });
+      }
+      throw new Error(`unexpected fetch URL in nemlig SII-116 fixture: ${url}`);
+    };
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchStub as unknown as typeof fetch;
+    try {
+      const rows = await collect(nemlig());
+      expect(rows).toEqual([]);
+      // The skip log fired at least once.
+      expect(
+        errSpy.mock.calls.some(
+          (call) =>
+            Array.isArray(call) && call[0] === 'nemlig source skipped',
+        ),
+      ).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      errSpy.mockRestore();
     }
   });
 });
