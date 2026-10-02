@@ -22,7 +22,13 @@
  * suite asserts this by using non-trivial `s`-values so a hardcoded
  * path fails the test.
  *
- * Spec: SII-96. No isolation logic — see SII-103.
+ * Spec: SII-96 (group walk) + SII-116 (one failed ribbon does not drop the source).
+ *
+ * Isolation policy (SII-116): one product-group GET returning a non-2xx
+ * status is logged and the walk continues with the next group. Bootstrap
+ * failures — a non-2xx frontpage, or a missing timestamp/timeslot —
+ * still throw; those are not "one ribbon". `fetchNemligGroup` itself
+ * still throws on non-2xx; the try/catch lives in `nemlig()`.
  */
 
 import type { Observation } from '../types.js';
@@ -224,7 +230,22 @@ export async function* nemlig(): AsyncIterable<Observation> {
   for (const node of frontpage.content ?? []) {
     const id = node?.ProductGroupId;
     if (typeof id !== 'string' || id.length === 0) continue;
-    const group = await fetchNemligGroup(fetch, ts, slot, id);
+    let group: NemligGroupResponse;
+    try {
+      group = await fetchNemligGroup(fetch, ts, slot, id);
+    } catch (err) {
+      // One bad ribbon must not drop the source — log and move on. The
+      // helper already encodes the agreed error text:
+      //   `nemlig group ${id} GET -> HTTP ${status}`
+      // so we forward it verbatim and continue with the next group.
+      // Bootstrap failures (frontpage, missing ts/slot) are checked
+      // above and still throw — they are not one ribbon.
+      console.error('nemlig source skipped', {
+        group_id: id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
     for (const obs of observationsFromGroup(group, observedAt)) {
       yield obs;
     }
