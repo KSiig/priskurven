@@ -124,6 +124,13 @@ jobs:
       # so omitting any binding is a failed deploy. Env values come
       # from the live function revision on every push to keep the
       # deploy idempotent against Terraform drift.
+      #
+      # SII-117 (homelab) ignores `service_config[0].secret_environment_variables`
+      # in Terraform so this `gcloud` write is the source of truth for the
+      # secret set; the next `terraform apply` will leave the secrets alone.
+      # SII-115 mounts the eight Salling Algolia secrets (`BILKATOGO_*`,
+      # `NETTO_*`, `FOTEX_*`) at `latest`. `CLOUDFLARE_API_TOKEN` predates
+      # this PR; keep it.
       - name: Deploy Cloud Function (Gen 2)
         env:
           CLOUDFLARE_ACCOUNT_ID_FROM_FN: '5b3269050c8afff008527d038d4f2538'
@@ -158,7 +165,7 @@ jobs:
             --no-allow-unauthenticated \
             --trigger-http \
             --set-env-vars="DB_MODE=d1,CLOUDFLARE_ACCOUNT_ID=5b3269050c8afff008527d038d4f2538,CLOUDFLARE_D1_DATABASE_ID=$DB_ID" \
-            --set-secrets="CLOUDFLARE_API_TOKEN=cloudflare-api-token:latest" \
+            --set-secrets="CLOUDFLARE_API_TOKEN=cloudflare-api-token:latest,BILKATOGO_PATH=BILKATOGO_PATH:latest,BILKATOGO_APP_ID=BILKATOGO_APP_ID:latest,BILKATOGO_KEY=BILKATOGO_KEY:latest,NETTO_PATH=NETTO_PATH:latest,NETTO_APP_ID=NETTO_APP_ID:latest,NETTO_KEY=NETTO_KEY:latest,FOTEX_PATH=FOTEX_PATH:latest,FOTEX_APP_ID=FOTEX_APP_ID:latest,FOTEX_KEY=FOTEX_KEY:latest" \
             --project=lateral-booking-506410-k4
 
           # Sanity check: every binding the SII-113 issue contract lists
@@ -177,6 +184,13 @@ jobs:
           grep -q 'nodejs22' /tmp/post-deploy.yaml || { echo "MISSING runtime nodejs22"; exit 1; }
           grep -q 'handler' /tmp/post-deploy.yaml || { echo "MISSING entry point handler"; exit 1; }
           grep -q "$SA" /tmp/post-deploy.yaml || { echo "MISSING runtime SA $SA"; exit 1; }
+          # SII-115: each Salling secret used at runtime must be present on
+          # the deployed revision. `--set-secrets=...:latest` resolves at
+          # deploy time; if a name is missing here the deploy itself fails,
+          # but a sanity check keeps the bar loud and visible in the log.
+          grep -q 'BILKATOGO_PATH' /tmp/post-deploy.yaml || { echo "MISSING secret binding BILKATOGO_PATH"; exit 1; }
+          grep -q 'NETTO_PATH' /tmp/post-deploy.yaml || { echo "MISSING secret binding NETTO_PATH"; exit 1; }
+          grep -q 'FOTEX_PATH' /tmp/post-deploy.yaml || { echo "MISSING secret binding FOTEX_PATH"; exit 1; }
 
           # Confirm the zip we shipped contains the compiled handler, not
           # raw TS. Catches a regression where someone re-adds `dist/*`

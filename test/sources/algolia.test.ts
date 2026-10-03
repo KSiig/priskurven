@@ -15,6 +15,7 @@ import { dirname, resolve } from 'node:path';
 
 import {
   algoliaHeaders,
+  algoliaIndexName,
   algoliaSearchBody,
   algoliaSearchUrl,
   fetchAlgoliaPage,
@@ -47,8 +48,39 @@ function readFixture(name: string): unknown {
 const OBSERVED_AT = '2026-09-20T13:45:01.123Z';
 const ISO_8601_WITH_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
+describe('algoliaIndexName', () => {
+  it('builds prod_{segment}_PRODUCTS from a bare segment', () => {
+    expect(algoliaIndexName('BILKATOGO')).toBe('prod_BILKATOGO_PRODUCTS');
+    expect(algoliaIndexName('NETTO')).toBe('prod_NETTO_PRODUCTS');
+    expect(algoliaIndexName('FOTEX')).toBe('prod_FOTEX_PRODUCTS');
+    expect(algoliaIndexName('netto')).toBe('prod_netto_PRODUCTS');
+  });
+
+  it('accepts a full prod_*_PRODUCTS value as-is', () => {
+    expect(algoliaIndexName('prod_BILKATOGO_PRODUCTS')).toBe(
+      'prod_BILKATOGO_PRODUCTS',
+    );
+    expect(algoliaIndexName('prod_NETTO_PRODUCTS')).toBe(
+      'prod_NETTO_PRODUCTS',
+    );
+    expect(algoliaIndexName('prod_FOTEX_PRODUCTS')).toBe(
+      'prod_FOTEX_PRODUCTS',
+    );
+  });
+
+  it('does not lowercase a segment', () => {
+    expect(algoliaIndexName('Bilka')).toBe('prod_Bilka_PRODUCTS');
+  });
+
+  it('does not double-wrap a full index name', () => {
+    expect(algoliaIndexName('prod_BILKATOGO_PRODUCTS')).not.toContain(
+      'prod_prod_',
+    );
+  });
+});
+
 describe('algoliaSearchUrl', () => {
-  it('builds the documented Salling URL pattern', () => {
+  it('builds the documented Salling URL pattern from a segment', () => {
     const url = algoliaSearchUrl('X4D5NJ4Y46', 'netto');
     expect(url).toBe('https://x4d5nj4y46-dsn.algolia.net/1/indexes/prod_netto_PRODUCTS/query');
   });
@@ -58,10 +90,28 @@ describe('algoliaSearchUrl', () => {
     expect(url.startsWith('https://x4d5nj4y46-')).toBe(true);
   });
 
-  it('embeds the path segment in prod_{path}_PRODUCTS', () => {
-    expect(algoliaSearchUrl('a', 'netto')).toContain('/prod_netto_PRODUCTS/');
-    expect(algoliaSearchUrl('a', 'bilkatogo')).toContain('/prod_bilkatogo_PRODUCTS/');
-    expect(algoliaSearchUrl('a', 'fotex')).toContain('/prod_fotex_PRODUCTS/');
+  it('embeds NETTO and FOTEX as prod_*_PRODUCTS from a bare segment', () => {
+    expect(algoliaSearchUrl('a', 'NETTO')).toContain('/prod_NETTO_PRODUCTS/');
+    expect(algoliaSearchUrl('a', 'FOTEX')).toContain('/prod_FOTEX_PRODUCTS/');
+  });
+
+  it('uses a full prod_*_PRODUCTS index name verbatim and embeds it once', () => {
+    const url = algoliaSearchUrl('F9VBJLR1BK', 'prod_BILKATOGO_PRODUCTS');
+    expect(url).toBe(
+      'https://f9vbjlr1bk-dsn.algolia.net/1/indexes/prod_BILKATOGO_PRODUCTS/query',
+    );
+    // Guard against the prod_prod_BILKATOGO_PRODUCTS_PRODUCTS regression.
+    expect(url).not.toContain('prod_prod_');
+    expect(url).not.toContain('_PRODUCTS_PRODUCTS');
+  });
+
+  it('lowercases only the appId, never the index name', () => {
+    const url = algoliaSearchUrl('F9VBJLR1BK', 'prod_NETTO_PRODUCTS');
+    expect(url).toBe(
+      'https://f9vbjlr1bk-dsn.algolia.net/1/indexes/prod_NETTO_PRODUCTS/query',
+    );
+    // Lowercase variants 404 per the SII-115 spec; assert they never appear.
+    expect(url).not.toContain('prod_netto_PRODUCTS');
   });
 });
 

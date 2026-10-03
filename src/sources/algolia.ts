@@ -83,16 +83,45 @@ export type AlgoliaConfig = {
 type Fetcher = typeof fetch;
 
 /**
+ * Resolve the Algolia index name from a `*_PATH` env-var value.
+ *
+ * Spec: SII-115.  A Salling source's `*_PATH` env var carries EITHER
+ *   (a) a path segment such as `BILKATOGO`, `NETTO`, or `FOTEX` — the
+ *       index name is then `prod_{SEGMENT}_PRODUCTS`;
+ *   (b) a full index name such as `prod_BILKATOGO_PRODUCTS` already,
+ *       passed verbatim.
+ *
+ * The BILKATOGO secret versions keep the full index name on
+ * `BILKATOGO_PATH`; NETTO_PATH and FOTEX_PATH store the bare segment.
+ * One helper, one truth.
+ *
+ * The index name is case-sensitive on the Algolia side
+ * (`prod_bilkatogo_PRODUCTS` returns HTTP 404) — the helper does NOT
+ * lowercase the segment.
+ */
+export function algoliaIndexName(path: string): string {
+  if (path.startsWith('prod_') && path.endsWith('_PRODUCTS')) {
+    return path;
+  }
+  return `prod_${path}_PRODUCTS`;
+}
+
+/**
  * Build the Algolia search URL for a Salling source.
  *
  * Host: `{appId}-dsn.algolia.net`.  `appId` is lower-cased to match
  * the heissepreise convention; Algolia tolerates either case but the
  * real upstream always returns a lowercase host.
  *
- * Path: `/1/indexes/prod_{path}_PRODUCTS/query`.
+ * Path: `/1/indexes/{indexName}/query`.  `indexName` is resolved from
+ * `path` via {@link algoliaIndexName}: a bare segment becomes
+ * `prod_{segment}_PRODUCTS`; a full `prod_*_PRODUCTS` value is used
+ * verbatim.  Do NOT lowercase the segment — Salling's Algolia indexes
+ * are case-sensitive.
  */
 export function algoliaSearchUrl(appId: string, path: string): string {
-  return `https://${appId.toLowerCase()}-dsn.algolia.net/1/indexes/prod_${path}_PRODUCTS/query`;
+  const indexName = algoliaIndexName(path);
+  return `https://${appId.toLowerCase()}-dsn.algolia.net/1/indexes/${indexName}/query`;
 }
 
 /**
