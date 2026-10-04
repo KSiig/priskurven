@@ -10,13 +10,14 @@
  *   - Does NOT swallow per-source failures. Failure isolation lives in
  *     SII-103 (orchestrator). Errors here propagate to the caller.
  *
- * DDL columns of observations_v2 (homelab migration 0002):
+ * DDL columns of observations (homelab migration 0003, SII-118):
  *   source TEXT, source_sku TEXT, observed_at TEXT
  *   price REAL, currency TEXT
  *   name TEXT, brand TEXT, size_value REAL, size_unit TEXT
  *   gtins TEXT  -- JSON array, may be []
  *   PRIMARY KEY (source, source_sku, observed_at) WITHOUT ROWID
- * `raw` stays on the in-memory Observation and is not inserted.
+ * There is no `raw` column. Sources may still put `raw` on the
+ * in-memory Observation; the writer does not persist it.
  * One btree means one D1 row written per product.
  */
 
@@ -33,7 +34,7 @@ import type { Observation } from "./types";
 const ROWS_PER_REQUEST = 50;
 
 const INSERT_SQL =
-  "INSERT INTO observations_v2 (" +
+  "INSERT INTO observations (" +
   "source, source_sku, observed_at, " +
   "price, currency, " +
   "name, brand, size_value, size_unit, " +

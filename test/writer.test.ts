@@ -106,7 +106,7 @@ describe("writeObservations", () => {
     // Every call targets the same INSERT, same table — per spec.
     for (const call of client.calls) {
       expect(call.sql).toBe(
-        "INSERT INTO observations_v2 (source, source_sku, observed_at, price, currency, name, brand, size_value, size_unit, gtins) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO observations (source, source_sku, observed_at, price, currency, name, brand, size_value, size_unit, gtins) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       );
     }
   });

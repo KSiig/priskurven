@@ -24,6 +24,10 @@
  * landed on `main` yet. Once the parent assembles the M1 stack onto
  * `src/types.ts`, the duplicated definitions can be removed and
  * imported from there.
+ *
+ * SII-118: the table is now the single `observations` table. The
+ * legacy `observations_v2` union was removed. `source` and
+ * `source_sku` are bound once each.
  */
 
 import type {
@@ -88,12 +92,9 @@ async function fetchObservations(
     .prepare(
       'SELECT observed_at, price FROM observations ' +
         'WHERE source = ? AND source_sku = ? ' +
-        'UNION ALL ' +
-        'SELECT observed_at, price FROM observations_v2 ' +
-        'WHERE source = ? AND source_sku = ? ' +
         'ORDER BY observed_at ASC',
     )
-    .bind(source, sku, source, sku);
+    .bind(source, sku);
   const result = await stmt.all<D1Row>();
   return result.results ?? [];
 }
