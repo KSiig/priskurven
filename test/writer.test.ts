@@ -106,7 +106,7 @@ describe("writeObservations", () => {
     // Every call targets the same INSERT, same table — per spec.
     for (const call of client.calls) {
       expect(call.sql).toBe(
-        "INSERT INTO observations (source, source_sku, observed_at, price, currency, name, brand, size_value, size_unit, gtins, raw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO observations_v2 (source, source_sku, observed_at, price, currency, name, brand, size_value, size_unit, gtins) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       );
     }
   });
@@ -147,8 +147,9 @@ describe("writeObservations", () => {
     expect(client.calls).toHaveLength(1);
     // Index 9 is gtins (0: source, 1: source_sku, 2: observed_at,
     // 3: price, 4: currency, 5: name, 6: brand, 7: size_value,
-    // 8: size_unit, 9: gtins, 10: raw).
+    // 8: size_unit, 9: gtins). raw is not inserted.
     expect(client.calls[0]?.params[9]).toBe("[]");
+    expect(client.calls[0]?.params).toHaveLength(10);
   });
 
   it("writes non-empty gtins as JSON", async () => {
@@ -192,25 +193,14 @@ describe("writeObservations", () => {
     expect(client.calls[0]?.params[6]).toBeNull();
   });
 
-  it("JSON-stringifies raw", async () => {
+  it("does not persist raw", async () => {
     const client = new FakeD1Client();
     await writeObservations(
       fromArray([mkObs({ raw: { nested: { a: 1 }, list: [1, 2] } })]),
       client,
     );
-    expect(client.calls[0]?.params[10]).toBe(
-      JSON.stringify({ nested: { a: 1 }, list: [1, 2] }),
-    );
-  });
-
-  it("JSON-stringifies raw null as the literal string 'null'", async () => {
-    // The DDL column is TEXT, so `raw` being undefined serialises to
-    // JSON `null` -> the string "null". Documented behaviour, not
-    // SQL NULL — if you want SQL NULL for raw, drop it from the
-    // Observation (this issue doesn't add that affordance).
-    const client = new FakeD1Client();
-    await writeObservations(fromArray([mkObs({ raw: null })]), client);
-    expect(client.calls[0]?.params[10]).toBe("null");
+    expect(client.calls[0]?.sql).not.toContain("raw");
+    expect(client.calls[0]?.params).toHaveLength(10);
   });
 
   it("normalises observed_at to include milliseconds", async () => {
