@@ -150,8 +150,15 @@ describe('/v1/history', () => {
     const db = makeD1(TWO_ROWS_ASC);
     await callHandler(db, "/v1/history?source=minkobmand&sku=5010029231526");
     expect(db.calls).toHaveLength(1);
+    expect(db.calls[0]!.sql).toContain('FROM observations ');
+    expect(db.calls[0]!.sql).toContain('FROM observations_v2 ');
     expect(db.calls[0]!.sql).toContain('WHERE source = ? AND source_sku = ?');
-    expect(db.calls[0]!.params).toEqual(['minkobmand', '5010029231526']);
+    expect(db.calls[0]!.params).toEqual([
+      'minkobmand',
+      '5010029231526',
+      'minkobmand',
+      '5010029231526',
+    ]);
   });
 
   it('404 when no rows match (empty D1 results)', async () => {
