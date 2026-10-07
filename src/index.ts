@@ -12,6 +12,7 @@
 import { createD1ClientFromEnv } from "./d1.js";
 import { writeObservations } from "./writer.js";
 import { sources, runOrchestrator, type RunResult } from "./orchestrator.js";
+import { fillEmptySlots } from "./fill-slots.js";
 
 interface HttpResponse {
   status(code: number): { json(body: unknown): void };
@@ -44,6 +45,16 @@ export const handler = async (
     const result = await runOrchestrator(sources, {
       write: (stream) => writeObservations(stream, client),
     });
+    // SII-131 — fill empty `product_slots` rows from a unique GTIN
+    // after the collect. Call it even when some sources have ok=false
+    // (per spec). A throw here must NOT fail the collect: log it and
+    // still return HTTP 200 with the orchestrator's RunResult.
+    try {
+      await fillEmptySlots(client);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("priskurven fillEmptySlots failed", { error: message });
+    }
     endHttpResponse(res, 200, result);
     return result;
   } catch (err) {
