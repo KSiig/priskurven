@@ -74,6 +74,13 @@ interface MockState {
   slots: SlotRow[];
   listings: ListingRow[];
   observations: ObservationRow[];
+  /**
+   * When set, the next `INSERT INTO product_slots` in `dispatchWrite`
+   * throws this message instead of appending the row. Lets tests
+   * simulate a UNIQUE constraint failure that the pre-insert checks
+   * did not catch (race between two concurrent POSTs).
+   */
+  slotInsertError?: string;
   /** Tracks calls in order for assertions. */
   calls: CapturedCall[];
 }
@@ -88,6 +95,7 @@ function makeD1(initial: Partial<MockState> = {}): MockD1 {
     slots: initial.slots ? [...initial.slots] : [],
     listings: initial.listings ? [...initial.listings] : [],
     observations: initial.observations ? [...initial.observations] : [],
+    slotInsertError: initial.slotInsertError,
     calls: [],
   };
   const db: MockD1 = {
@@ -196,6 +204,13 @@ function dispatchWrite(state: MockState, call: CapturedCall): void {
   const sql = call.sql;
   const params = call.params;
   if (/INSERT INTO product_slots/.test(sql)) {
+    if (state.slotInsertError !== undefined) {
+      const message = state.slotInsertError;
+      // One-shot: clear after throwing so a second INSERT in the same
+      // test (if any) goes through normally.
+      state.slotInsertError = undefined;
+      throw new Error(message);
+    }
     const [productId, source, sourceSku, matchedBy] = params as [
       number,
       string,
@@ -679,6 +694,63 @@ describe('POST /v1/products/:id/slots', () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string; message: string };
     expect(body.message).toBe('listing is on another product');
+  });
+
+  it('returns 409 "listing is on another product" when the slot INSERT races and loses on the (source, source_sku) UNIQUE', async () => {
+    // Both pre-insert checks pass (no slot for this product/source, no
+    // other slot owning this (source, source_sku)). A concurrent
+    // request inserted the slot between check and INSERT, so the
+    // INSERT throws a UNIQUE constraint failure keyed on source_sku.
+    const db = makeD1({
+      products: [{ id: 1, label: 'Arla minimælk 1 L' }],
+      listings: [
+        { source: 'netto', source_sku: '123', currency: 'DKK', name: null, brand: null, size_value: null, size_unit: null, gtins: '[]' },
+      ],
+      slotInsertError:
+        'D1_EXEC_ERROR: UNIQUE constraint failed: product_slots.source, product_slots.source_sku',
+    });
+    const res = await callHandler(
+      db,
+      '/v1/products/1/slots',
+      {
+        method: 'POST',
+        headers: bearerHeaders(),
+        body: JSON.stringify({ source: 'netto', source_sku: '123' }),
+      },
+      { PRISKURVEN_API_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('conflict');
+    expect(body.message).toBe('listing is on another product');
+  });
+
+  it('returns 409 "slot is filled" when the slot INSERT races and loses on the (product_id, source) UNIQUE', async () => {
+    // Same setup as above but the losing UNIQUE is the (product_id,
+    // source) pair — meaning another request filled this product's
+    // slot for the same source while we were between check and INSERT.
+    const db = makeD1({
+      products: [{ id: 1, label: 'Arla minimælk 1 L' }],
+      listings: [
+        { source: 'netto', source_sku: '123', currency: 'DKK', name: null, brand: null, size_value: null, size_unit: null, gtins: '[]' },
+      ],
+      slotInsertError:
+        'D1_EXEC_ERROR: UNIQUE constraint failed: product_slots.product_id, product_slots.source',
+    });
+    const res = await callHandler(
+      db,
+      '/v1/products/1/slots',
+      {
+        method: 'POST',
+        headers: bearerHeaders(),
+        body: JSON.stringify({ source: 'netto', source_sku: '123' }),
+      },
+      { PRISKURVEN_API_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('conflict');
+    expect(body.message).toBe('slot is filled');
   });
 
   it('returns 401 when the bearer token is missing', async () => {

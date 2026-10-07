@@ -472,12 +472,24 @@ async function handleSetSlot(
     return conflict('listing is on another product');
   }
 
-  await execWrite(
-    env.DB,
-    'INSERT INTO product_slots (product_id, source, source_sku, matched_by) ' +
-      'VALUES (?, ?, ?, ?)',
-    [id, source, sourceSku, 'manual'],
-  );
+  try {
+    await execWrite(
+      env.DB,
+      'INSERT INTO product_slots (product_id, source, source_sku, matched_by) ' +
+        'VALUES (?, ?, ?, ?)',
+      [id, source, sourceSku, 'manual'],
+    );
+  } catch (err) {
+    // Race-safe fallback: a concurrent request can pass the slot/list
+    // checks above and then lose the INSERT to a UNIQUE constraint.
+    // Re-raise anything that is not a UNIQUE constraint failure.
+    const text = err instanceof Error ? err.message : String(err);
+    if (!text.includes('UNIQUE constraint failed')) throw err;
+    if (text.includes('source_sku')) {
+      return conflict('listing is on another product');
+    }
+    return conflict('slot is filled');
+  }
   return jsonResponse(201, { source, source_sku: sourceSku, matched_by: 'manual' });
 }
 
