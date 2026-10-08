@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../src/d1.js", () => ({
   createD1ClientFromEnv: () => ({
     async exec() {},
+    async query<T>(): Promise<T[]> {
+      return [];
+    },
     async execBatch() {},
   }),
 }));

@@ -24,6 +24,13 @@ export interface D1Client {
   /** Execute a parameterised statement. The writer does not read rows back. */
   exec(sql: string, params?: readonly unknown[]): Promise<void>;
   /**
+   * Execute a parameterised SELECT and return the result rows. SII-130
+   * uses this to read the current `listings` rows before deciding
+   * which listings statements to send. SII-131 imports it too — there
+   * is no second D1 client.
+   */
+  query<T>(sql: string, params?: readonly unknown[]): Promise<T[]>;
+  /**
    * Execute many statements in one HTTP call. The writer uses this so a
    * full catalog does not spend the Cloud Run request budget on one
    * round trip per row. Clients that omit it are called via `exec`.
@@ -99,6 +106,56 @@ export function createD1RestClient(config: D1RestConfig): D1Client {
   return {
     async exec(sql: string, params?: readonly unknown[]): Promise<void> {
       await post({ sql, params: params ?? [] });
+    },
+    async query<T>(
+      sql: string,
+      params?: readonly unknown[],
+    ): Promise<T[]> {
+      const body = { sql, params: params ?? [] };
+      const res = await fetchImpl(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(
+          `D1 query failed (${res.status} ${res.statusText}): ${text}`,
+        );
+      }
+      const payload = (await res.json()) as {
+        success?: boolean;
+        errors?: unknown;
+        result?: unknown;
+      };
+      if (payload.success === false) {
+        throw new Error(`D1 query rejected: ${JSON.stringify(payload.errors)}`);
+      }
+      // The D1 query endpoint returns either { result: [...] } for a
+      // single statement, or { result: [{ results: [...] }, ...] } for
+      // a batch. We only ever call this from `query`, so we look at the
+      // first element.
+      const outer = Array.isArray(payload.result) ? payload.result : [];
+      const first = outer[0];
+      if (
+        first &&
+        typeof first === "object" &&
+        "success" in first &&
+        (first as { success?: boolean }).success === false
+      ) {
+        throw new Error(
+          `D1 query rejected: ${JSON.stringify(
+            (first as { errors?: unknown }).errors,
+          )}`,
+        );
+      }
+      const rows = first && typeof first === "object" && "results" in first
+        ? (first as { results?: T[] }).results
+        : undefined;
+      return (rows ?? []) as T[];
     },
     async execBatch(statements: readonly D1Statement[]): Promise<void> {
       if (statements.length === 0) return;

@@ -7,15 +7,32 @@ import {
   type D1Statement,
 } from "../src/d1";
 import type { Observation, Source } from "../src/types";
-import { normalizeObservedAt, writeObservations } from "../src/writer";
+import {
+  normalizeObservedAt,
+  writeObservations,
+  writeObservationsDetailed,
+} from "../src/writer";
 
 /**
  * In-memory D1 client. Records every (sql, params) pair so tests can
- * assert what the writer produced. Implements only what the writer
- * needs (`exec`). Reset between tests via `reset()`.
+ * assert what the writer produced. Holds a `listings` map keyed by
+ * `(source, source_sku)` so the writer's upsert logic can be exercised
+ * end-to-end. Reset between tests via `reset()`.
  */
+type ListingRow = {
+  source: string;
+  source_sku: string;
+  currency: string;
+  name: string | null;
+  brand: string | null;
+  size_value: number | null;
+  size_unit: string | null;
+  gtins: string;
+};
+
 class FakeD1Client implements D1Client {
   calls: Array<{ sql: string; params: readonly unknown[] }> = [];
+  listings: Map<string, ListingRow> = new Map();
   failOn?: (sql: string) => Error;
 
   async exec(sql: string, params: readonly unknown[] = []): Promise<void> {
@@ -26,8 +43,34 @@ class FakeD1Client implements D1Client {
     }
   }
 
+  async query<T>(
+    sql: string,
+    params: readonly unknown[] = [],
+  ): Promise<T[]> {
+    this.calls.push({ sql, params });
+    if (this.failOn && this.failOn(sql)) {
+      const err = this.failOn(sql);
+      if (err) throw err;
+    }
+    // Only the SELECT against listings is wired up. Anything else
+    // returns empty so the writer's listings upsert can run without
+    // surprises.
+    if (sql.includes("FROM listings")) {
+      const source = params[0] as string;
+      const skus = params.slice(1) as string[];
+      const out: T[] = [];
+      for (const sku of skus) {
+        const row = this.listings.get(`${source}|${sku}`);
+        if (row) out.push(row as unknown as T);
+      }
+      return out;
+    }
+    return [];
+  }
+
   reset(): void {
     this.calls = [];
+    this.listings.clear();
     this.failOn = undefined;
   }
 }
@@ -50,6 +93,20 @@ async function* fromArray(items: Observation[]): AsyncIterable<Observation> {
   for (const item of items) {
     yield item;
   }
+}
+
+/** Filter the recorded calls down to observation INSERTs only. */
+function obsInserts(client: FakeD1Client) {
+  return client.calls.filter((c) =>
+    c.sql.startsWith("INSERT INTO observations "),
+  );
+}
+
+/** Filter the recorded calls down to listings statements. */
+function listingsCalls(client: FakeD1Client) {
+  return client.calls.filter((c) =>
+    /FROM listings|INSERT INTO listings|UPDATE listings/.test(c.sql),
+  );
 }
 
 describe("normalizeObservedAt", () => {
@@ -81,6 +138,31 @@ describe("normalizeObservedAt", () => {
 });
 
 describe("writeObservations", () => {
+  // The DDL lives in homelab migration 0004 (SII-128). This repo does
+  // not own the migration; the writer's tests copy the relevant CREATE
+  // TABLE statement verbatim so the test schema matches what the
+  // writer will see in production. SII-131 copies the same DDL.
+  it("reference: listings DDL is reproduced verbatim", () => {
+    const ddl = [
+      "CREATE TABLE listings (",
+      "  source      TEXT NOT NULL,",
+      "  source_sku  TEXT NOT NULL,",
+      "  currency    TEXT NOT NULL,",
+      "  name        TEXT,",
+      "  brand       TEXT,",
+      "  size_value  REAL,",
+      "  size_unit   TEXT,",
+      "  gtins       TEXT NOT NULL DEFAULT '[]',",
+      "  PRIMARY KEY (source, source_sku)",
+      ") WITHOUT ROWID;",
+    ].join("\n");
+    // SII-128 homelab migration 0004. Kept here as a guard so any
+    // accidental drift between this repo and the migration is caught.
+    expect(ddl).toContain("CREATE TABLE listings");
+    expect(ddl).toContain("gtins       TEXT NOT NULL DEFAULT '[]'");
+    expect(ddl).toContain("PRIMARY KEY (source, source_sku)");
+    expect(ddl).toContain(") WITHOUT ROWID");
+  });
   it("two fake sources write into one shared table", async () => {
     // SPEC: "Two fake sources that write the same table."
     const fakeA: Source = () =>
@@ -102,9 +184,10 @@ describe("writeObservations", () => {
 
     expect(totalA).toBe(3);
     expect(totalB).toBe(2);
-    expect(client.calls).toHaveLength(5);
-    // Every call targets the same INSERT, same table — per spec.
-    for (const call of client.calls) {
+    // Every observation call targets the same INSERT, same table — per spec.
+    const inserts = obsInserts(client);
+    expect(inserts).toHaveLength(5);
+    for (const call of inserts) {
       expect(call.sql).toBe(
         "INSERT INTO observations (source, source_sku, observed_at, price, currency, name, brand, size_value, size_unit, gtins) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       );
@@ -116,6 +199,9 @@ describe("writeObservations", () => {
     const client: D1Client = {
       async exec() {
         throw new Error("exec should not be used when execBatch exists");
+      },
+      async query() {
+        return [];
       },
       async execBatch(statements) {
         batches.push(statements.map((statement) => ({ ...statement })));
@@ -130,10 +216,15 @@ describe("writeObservations", () => {
       client,
     );
     expect(written).toBe(3);
-    expect(batches).toHaveLength(1);
-    expect(batches[0]).toHaveLength(3);
-    expect(batches[0]![0]?.params?.[1]).toBe("r1");
-    expect(batches[0]![2]?.params?.[1]).toBe("r3");
+    // Observation INSERTs go out in one execBatch of 3. The writer may
+    // then route listings statements through a second execBatch.
+    const obsBatches = batches.filter((b) =>
+      b[0]?.sql.startsWith("INSERT INTO observations"),
+    );
+    expect(obsBatches).toHaveLength(1);
+    expect(obsBatches[0]).toHaveLength(3);
+    expect(obsBatches[0]![0]?.params?.[1]).toBe("r1");
+    expect(obsBatches[0]![2]?.params?.[1]).toBe("r3");
   });
 
   it("writes empty gtins as the literal JSON array []", async () => {
@@ -144,12 +235,12 @@ describe("writeObservations", () => {
       fromArray([mkObs({ gtins: [] })]),
       client,
     );
-    expect(client.calls).toHaveLength(1);
+    expect(obsInserts(client)).toHaveLength(1);
     // Index 9 is gtins (0: source, 1: source_sku, 2: observed_at,
     // 3: price, 4: currency, 5: name, 6: brand, 7: size_value,
     // 8: size_unit, 9: gtins). raw is not inserted.
-    expect(client.calls[0]?.params[9]).toBe("[]");
-    expect(client.calls[0]?.params).toHaveLength(10);
+    expect(obsInserts(client)[0]?.params[9]).toBe("[]");
+    expect(obsInserts(client)[0]?.params).toHaveLength(10);
   });
 
   it("writes non-empty gtins as JSON", async () => {
@@ -158,7 +249,7 @@ describe("writeObservations", () => {
       fromArray([mkObs({ gtins: ["5712345000019", "5712345000026"] })]),
       client,
     );
-    expect(client.calls[0]?.params[9]).toBe(
+    expect(obsInserts(client)[0]?.params[9]).toBe(
       '["5712345000019","5712345000026"]',
     );
   });
@@ -166,7 +257,7 @@ describe("writeObservations", () => {
   it("writes currency DKK", async () => {
     const client = new FakeD1Client();
     await writeObservations(fromArray([mkObs({ currency: "DKK" })]), client);
-    expect(client.calls[0]?.params[4]).toBe("DKK");
+    expect(obsInserts(client)[0]?.params[4]).toBe("DKK");
   });
 
   it("flattens size to size_value and size_unit columns", async () => {
@@ -175,22 +266,22 @@ describe("writeObservations", () => {
       fromArray([mkObs({ size: { value: 1.5, unit: "l" } })]),
       client,
     );
-    expect(client.calls[0]?.params[7]).toBe(1.5);
-    expect(client.calls[0]?.params[8]).toBe("l");
+    expect(obsInserts(client)[0]?.params[7]).toBe(1.5);
+    expect(obsInserts(client)[0]?.params[8]).toBe("l");
   });
 
   it("writes NULL for size_value and size_unit when size is absent", async () => {
     const client = new FakeD1Client();
     await writeObservations(fromArray([mkObs()]), client);
-    expect(client.calls[0]?.params[7]).toBeNull();
-    expect(client.calls[0]?.params[8]).toBeNull();
+    expect(obsInserts(client)[0]?.params[7]).toBeNull();
+    expect(obsInserts(client)[0]?.params[8]).toBeNull();
   });
 
   it("writes NULL for name and brand when absent", async () => {
     const client = new FakeD1Client();
     await writeObservations(fromArray([mkObs()]), client);
-    expect(client.calls[0]?.params[5]).toBeNull();
-    expect(client.calls[0]?.params[6]).toBeNull();
+    expect(obsInserts(client)[0]?.params[5]).toBeNull();
+    expect(obsInserts(client)[0]?.params[6]).toBeNull();
   });
 
   it("does not persist raw", async () => {
@@ -199,8 +290,8 @@ describe("writeObservations", () => {
       fromArray([mkObs({ raw: { nested: { a: 1 }, list: [1, 2] } })]),
       client,
     );
-    expect(client.calls[0]?.sql).not.toContain("raw");
-    expect(client.calls[0]?.params).toHaveLength(10);
+    expect(obsInserts(client)[0]?.sql).not.toContain("raw");
+    expect(obsInserts(client)[0]?.params).toHaveLength(10);
   });
 
   it("normalises observed_at to include milliseconds", async () => {
@@ -209,7 +300,7 @@ describe("writeObservations", () => {
       fromArray([mkObs({ observed_at: "2024-01-15T10:30:00Z" })]),
       client,
     );
-    expect(client.calls[0]?.params[2]).toBe("2024-01-15T10:30:00.000Z");
+    expect(obsInserts(client)[0]?.params[2]).toBe("2024-01-15T10:30:00.000Z");
   });
 
   it("propagates errors instead of swallowing them", async () => {
@@ -237,7 +328,7 @@ describe("writeObservations", () => {
       ]),
       client,
     );
-    const params = client.calls[0]!.params;
+    const params = obsInserts(client)[0]!.params;
     // The PRIMARY KEY columns are at indices 0, 1, 2 (source, source_sku,
     // observed_at). gtin must not appear in any PRIMARY KEY position.
     expect(params[0]).toBe("rema");
@@ -413,5 +504,244 @@ describe("createD1ClientFromEnv", () => {
       CLOUDFLARE_API_TOKEN: "t",
     });
     expect(typeof client.exec).toBe("function");
+  });
+});
+
+describe("writeObservationsDetailed (listings upsert)", () => {
+  it("inserts a listings row the first time a sku is seen", async () => {
+    const client = new FakeD1Client();
+    const result = await writeObservationsDetailed(
+      fromArray([
+        mkObs({
+          source: "rema",
+          source_sku: "r1",
+          name: "Minimælk",
+          brand: "Arla",
+          size: { value: 1, unit: "l" },
+          gtins: ["5712345000019"],
+        }),
+      ]),
+      client,
+    );
+    expect(result.observations).toBe(1);
+    expect(result.listingsStatements).toBe(1);
+    const insert = client.calls.find((c) =>
+      c.sql.startsWith("INSERT INTO listings"),
+    );
+    expect(insert).toBeDefined();
+    expect(insert?.params).toEqual([
+      "rema",
+      "r1",
+      "DKK",
+      "Minimælk",
+      "Arla",
+      1,
+      "l",
+      '["5712345000019"]',
+    ]);
+  });
+
+  it("sends no listings statement when all six fields match", async () => {
+    const client = new FakeD1Client();
+    client.listings.set("rema|r1", {
+      source: "rema",
+      source_sku: "r1",
+      currency: "DKK",
+      name: "Minimælk",
+      brand: "Arla",
+      size_value: 1,
+      size_unit: "l",
+      gtins: '["5712345000019"]',
+    });
+    const result = await writeObservationsDetailed(
+      fromArray([
+        mkObs({
+          source: "rema",
+          source_sku: "r1",
+          name: "Minimælk",
+          brand: "Arla",
+          size: { value: 1, unit: "l" },
+          gtins: ["5712345000019"],
+        }),
+      ]),
+      client,
+    );
+    expect(result.observations).toBe(1);
+    expect(result.listingsStatements).toBe(0);
+    const listingsCalls = client.calls.filter((c) =>
+      /FROM listings|INSERT INTO listings|UPDATE listings/.test(c.sql),
+    );
+    // SELECT runs to discover; no INSERT/UPDATE follows.
+    expect(listingsCalls).toHaveLength(1);
+    expect(listingsCalls[0]!.sql).toContain("FROM listings");
+  });
+
+  it("updates the listings row when name changes", async () => {
+    const client = new FakeD1Client();
+    client.listings.set("rema|r1", {
+      source: "rema",
+      source_sku: "r1",
+      currency: "DKK",
+      name: "Minimælk",
+      brand: "Arla",
+      size_value: 1,
+      size_unit: "l",
+      gtins: "[]",
+    });
+    const result = await writeObservationsDetailed(
+      fromArray([
+        mkObs({
+          source: "rema",
+          source_sku: "r1",
+          name: "Minimælk øko",
+          brand: "Arla",
+          size: { value: 1, unit: "l" },
+          gtins: [],
+        }),
+      ]),
+      client,
+    );
+    expect(result.listingsStatements).toBe(1);
+    const update = client.calls.find((c) =>
+      c.sql.startsWith("UPDATE listings"),
+    );
+    expect(update).toBeDefined();
+    expect(update?.params).toEqual([
+      "DKK",
+      "Minimælk øko",
+      "Arla",
+      1,
+      "l",
+      "[]",
+      "rema",
+      "r1",
+    ]);
+  });
+
+  it("updates the listings row when gtins changes", async () => {
+    const client = new FakeD1Client();
+    client.listings.set("rema|r1", {
+      source: "rema",
+      source_sku: "r1",
+      currency: "DKK",
+      name: null,
+      brand: null,
+      size_value: null,
+      size_unit: null,
+      gtins: "[]",
+    });
+    const result = await writeObservationsDetailed(
+      fromArray([
+        mkObs({
+          source: "rema",
+          source_sku: "r1",
+          gtins: ["5712345000019"],
+        }),
+      ]),
+      client,
+    );
+    expect(result.listingsStatements).toBe(1);
+    const update = client.calls.find((c) =>
+      c.sql.startsWith("UPDATE listings"),
+    );
+    expect(update?.params?.[5]).toBe('["5712345000019"]');
+  });
+
+  it("does not write listings on a price-only change", async () => {
+    const client = new FakeD1Client();
+    client.listings.set("rema|r1", {
+      source: "rema",
+      source_sku: "r1",
+      currency: "DKK",
+      name: "Minimælk",
+      brand: "Arla",
+      size_value: 1,
+      size_unit: "l",
+      gtins: "[]",
+    });
+    const result = await writeObservationsDetailed(
+      fromArray([
+        mkObs({
+          source: "rema",
+          source_sku: "r1",
+          name: "Minimælk",
+          brand: "Arla",
+          size: { value: 1, unit: "l" },
+          gtins: [],
+          price: 99.95, // only the price changed
+        }),
+      ]),
+      client,
+    );
+    expect(result.observations).toBe(1);
+    expect(result.listingsStatements).toBe(0);
+    const listingsWrites = client.calls.filter((c) =>
+      /INSERT INTO listings|UPDATE listings/.test(c.sql),
+    );
+    expect(listingsWrites).toHaveLength(0);
+  });
+
+  it("compares gtins as JSON text — array order matters", async () => {
+    const client = new FakeD1Client();
+    client.listings.set("rema|r1", {
+      source: "rema",
+      source_sku: "r1",
+      currency: "DKK",
+      name: null,
+      brand: null,
+      size_value: null,
+      size_unit: null,
+      gtins: '["a","b"]',
+    });
+    const result = await writeObservationsDetailed(
+      fromArray([
+        mkObs({
+          source: "rema",
+          source_sku: "r1",
+          gtins: ["b", "a"], // different order, same set
+        }),
+      ]),
+      client,
+    );
+    expect(result.listingsStatements).toBe(1);
+  });
+
+  it("handles a chunk with both a missing row and a matching row", async () => {
+    const client = new FakeD1Client();
+    client.listings.set("rema|existing", {
+      source: "rema",
+      source_sku: "existing",
+      currency: "DKK",
+      name: null,
+      brand: null,
+      size_value: null,
+      size_unit: null,
+      gtins: "[]",
+    });
+    const result = await writeObservationsDetailed(
+      fromArray([
+        mkObs({ source: "rema", source_sku: "existing" }),
+        mkObs({ source: "rema", source_sku: "new" }),
+      ]),
+      client,
+    );
+    expect(result.observations).toBe(2);
+    expect(result.listingsStatements).toBe(1);
+    const insert = client.calls.find((c) =>
+      c.sql.startsWith("INSERT INTO listings"),
+    );
+    expect(insert?.params?.[1]).toBe("new");
+  });
+
+  it("writeObservations still returns the observation count and ignores listings", async () => {
+    const client = new FakeD1Client();
+    const total = await writeObservations(
+      fromArray([
+        mkObs({ source: "rema", source_sku: "r1" }),
+        mkObs({ source: "rema", source_sku: "r2" }),
+      ]),
+      client,
+    );
+    expect(total).toBe(2);
   });
 });
