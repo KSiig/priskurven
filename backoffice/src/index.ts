@@ -29,6 +29,7 @@ import type {
 
 import { escapeHtml } from "./html";
 import { handleProducts } from "./products";
+import { handleApproval } from "./approval";
 
 /**
  * Minimal shape of the identity Cloudflare Access returns for a
@@ -146,6 +147,11 @@ export async function fetch(
     url.pathname.startsWith("/products/")
   ) {
     return handleProducts(request, env);
+  } else if (
+    url.pathname === "/approval" ||
+    url.pathname.startsWith("/approval/")
+  ) {
+    return handleApproval(request, env);
   } else {
     return new Response("not_found", { status: 404 });
   }
