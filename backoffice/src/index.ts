@@ -28,6 +28,7 @@ import type {
 } from "@cloudflare/workers-types";
 
 import { escapeHtml } from "./html";
+import { handleProducts } from "./products";
 
 /**
  * Minimal shape of the identity Cloudflare Access returns for a
@@ -140,6 +141,11 @@ export async function fetch(
       status: 200,
       headers: { "content-type": "text/html; charset=utf-8" },
     });
+  } else if (
+    url.pathname === "/products" ||
+    url.pathname.startsWith("/products/")
+  ) {
+    return handleProducts(request, env);
   } else {
     return new Response("not_found", { status: 404 });
   }
