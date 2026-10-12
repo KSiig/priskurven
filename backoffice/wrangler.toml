@@ -1,0 +1,9 @@
+name = "priskurven-backoffice"
+compatibility_date = "2026-08-01"
+main = "src/index.ts"
+workers_dev = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "priskurven"
+database_id = "6397206b-e59e-4b9b-a3b3-6dc9674e1325"

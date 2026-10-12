@@ -233,3 +233,15 @@ jobs:
       cloudflare_account_id: "5b3269050c8afff008527d038d4f2538"
     secrets:
       cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  deploy-backoffice:
+    name: Deploy priskurven-backoffice
+    needs: [wrangler]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.wrangler.outputs.present == 'true'
+    uses: KSiig/homelab/.github/workflows/cloudflare-deploy.yml@main
+    with:
+      working_directory: backoffice
+      command: deploy
+      cloudflare_account_id: "5b3269050c8afff008527d038d4f2538"
+    secrets:
+      cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
