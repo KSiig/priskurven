@@ -28,6 +28,7 @@ import type {
   D1Database,
   D1PreparedStatement,
   ExecutionContext,
+  RequestInfo
 } from "@cloudflare/workers-types";
 
 import { handleProducts } from "../../backoffice/src/products";
