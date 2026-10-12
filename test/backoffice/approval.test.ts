@@ -35,6 +35,7 @@ import type {
   D1Database,
   D1PreparedStatement,
   ExecutionContext,
+  RequestInfo
 } from "@cloudflare/workers-types";
 
 import { handleApproval } from "../../backoffice/src/approval";

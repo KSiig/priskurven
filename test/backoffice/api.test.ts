@@ -27,6 +27,8 @@ import {
   type ApiEnv,
 } from "../../backoffice/src/api";
 
+import type { RequestInfo } from "@cloudflare/workers-types";
+
 /** Snapshot of the inputs handed to `globalThis.fetch`. */
 interface CapturedFetch {
   url: string;
